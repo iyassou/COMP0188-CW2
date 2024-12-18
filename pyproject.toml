@@ -12,6 +12,7 @@ dependencies = [
     "setuptools",
     "torch",
     "torcheval",
+    "torchvision",
     "tqdm",
     "wandb",
 ]
