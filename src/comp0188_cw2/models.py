@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 def cnn_block(
@@ -54,7 +53,7 @@ def dense_block(
     )
 
 class BaselineModel(torch.nn.Module):
-    def __init__(self, dev: torch.device, dtype: type=np.float16):
+    def __init__(self, dev: torch.device, dtype: type=torch.float16):
         super().__init__()
         self.device = dev
 
@@ -76,23 +75,27 @@ class BaselineModel(torch.nn.Module):
 
         dyn_features = 15, 256, 128
         self.dynamics_encoder = torch.nn.Sequential(
-            module
-            for in_features, out_features in zip(dyn_features[:-1], dyn_features[1:])
-            for module in dense_block(
-                in_features=in_features, out_features=out_features,
-                dropout=None, batch_norm=False, activation=None,
-                dtype=dtype, device=dev,
+            *(
+                module
+                for in_features, out_features in zip(dyn_features[:-1], dyn_features[1:])
+                for module in dense_block(
+                    in_features=in_features, out_features=out_features,
+                    dropout=None, batch_norm=False, activation=None,
+                    dtype=dtype, device=dev,
+                )
             )
         )
 
         fl_features = 128, 64, 32, 6
         self.fusion_layer = torch.nn.Sequential(
-            module
-            for in_features, out_features in zip(fl_features[:-1], fl_features[1:])
-            for module in dense_block(
-                in_features=in_features, out_features=out_features,
-                dropout=None, batch_norm=False, activation=None,
-                dtype=dtype, device=dev,
+            *(
+                module
+                for in_features, out_features in zip(fl_features[:-1], fl_features[1:])
+                for module in dense_block(
+                    in_features=in_features, out_features=out_features,
+                    dropout=None, batch_norm=False, activation=None,
+                    dtype=dtype, device=dev,
+                )
             )
         )
     
