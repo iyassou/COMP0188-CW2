@@ -104,7 +104,7 @@ class BaselineModel(torch.nn.Module):
         Parameters
         ----------
         images: torch.Tensor
-            Shape [batch_size, 448, 224], stems from:
+            Shape [batch_size, 2, 224, 224], stems from:
                 torch.concat((front_cam_ob, mount_cam_ob), dim=0)
         dynamics: torch.Tensor
             Shape [batch_size, 15], stems from:

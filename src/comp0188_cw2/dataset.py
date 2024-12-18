@@ -8,9 +8,10 @@ import bisect
 import torch
 
 from pathlib import Path
+from torchvision.transforms import v2
 
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, directory: Path, transforms: dict, dev: torch.device):
+    def __init__(self, directory: Path, transforms: dict[str, v2.Transform], dev: torch.device):
         self.transforms = transforms
         self.device = dev
         h5_files = sorted(
