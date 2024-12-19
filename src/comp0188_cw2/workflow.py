@@ -102,15 +102,15 @@ def train_model_for_one_epoch(
     optimiser: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     criterion: torch.nn.modules.loss._Loss,
-    metrics: tuple[torcheval.metrics.Metric]) -> float:
+    wandb_metrics: dict[slice, tuple[WandBMetric, ...]]) -> float:
     """Trains the model for a single epoch on the supplied DataLoader and
     returns the mean loss.
     
     Notes
     -----
-    `scheduler` and `metrics` can be set to None."""
-    if metrics is None:
-        metrics = ()
+    `scheduler` and `wandb_metrics` can be set to None."""
+    if wandb_metrics is None:
+        wandb_metrics = {}
     model.train()
     losses = []
     for X, y in tqdm.tqdm(dataloader, desc="Training"):
@@ -120,11 +120,14 @@ def train_model_for_one_epoch(
         loss.backward()
         optimiser.step()
         losses.append(loss.item())
-        for metric in metrics:
-            if 'roc' in metric.__class__.__name__.casefold():
-                metric.update(torch.argmax(prediction, dim=1), y)
-            else:
-                metric.update(prediction, y)
+        for cut, wbms in wandb_metrics.items():
+            _pred: torch.Tensor  = prediction[:, cut]
+            _act: torch.Tensor   = y[:, cut]
+            for wbm in wbms:
+                if "roc" in wbm.metric.__class__.__name__.casefold():
+                    wbm.metric.update(torch.argmax(_pred, dim=1), _act)
+                else:
+                    wbm.metric.update(_pred, _act)
     if scheduler is not None:
         scheduler.step()
     return np.mean(losses)
@@ -133,15 +136,15 @@ def evaluate_model(
     model: torch.nn.Module,
     dataloader: torch.utils.data.DataLoader,
     criterion: torch.nn.modules.loss._Loss,
-    metrics: tuple[torcheval.metrics.Metric]) -> float:
+    wandb_metrics: dict[slice, tuple[WandBMetric, ...]]) -> float:
     """Evaluates the model's performance on the supplied DataLoader, updates
     the given metrics, and returns the mean loss.
     
     Notes
     -----
-    `metrics` can be set to None."""
-    if metrics is None:
-        metrics = ()
+    `wandb_metrics` can be set to None."""
+    if wandb_metrics is None:
+        wandb_metrics = {}
     model.eval()
     losses = []
     with torch.no_grad():
@@ -149,11 +152,14 @@ def evaluate_model(
             prediction = model(X)
             loss = criterion(prediction, y)
             losses.append(loss.item())
-            for metric in metrics:
-                if 'roc' in metric.__class__.__name__.casefold():
-                    metric.update(torch.argmax(prediction, dim=1), y)
-                else:
-                    metric.update(prediction, y)
+            for cut, wbms in wandb_metrics.items():
+                _pred: torch.Tensor  = prediction[:, cut]
+                _act: torch.Tensor   = y[:, cut]
+                for wbm in wbms:
+                    if "roc" in wbm.metric.__class__.__name__.casefold():
+                        wbm.metric.update(torch.argmax(_pred, dim=1), _act)
+                    else:
+                        wbm.metric.update(_pred, _act)
     return np.mean(losses)
 
 def training_loop(
@@ -170,11 +176,14 @@ def training_loop(
     training_criterion: torch.nn.modules.loss._Loss,
     validation_criterion: torch.nn.modules.loss._Loss,
     
-    training_metrics: tuple[WandBMetric],
-    validation_metrics: tuple[WandBMetric]):
+    training_metrics: dict[slice, tuple[WandBMetric, ...]],
+    validation_metrics: dict[slice, tuple[WandBMetric, ...]]):
     """Big try-finally that terminates the WandB run regardless."""
-    splits = "train", "val"
-    metrics = training_metrics, validation_metrics
+    splits: tuple[str, str] = "train", "val"
+    split_wandb_metrics = (
+        tuple(x for y in training_metrics.values() for x in y),
+        tuple(x for y in validation_metrics.values() for x in y),
+    )
     run = wandb.init(**wandb_config.asdict())
     try:
         torch.manual_seed(wandb_config.seed)
@@ -187,14 +196,14 @@ def training_loop(
                 optimiser=optimiser,
                 scheduler=scheduler,
                 criterion=training_criterion,
-                metrics=tuple(tm.metric for tm in training_metrics)
+                wandb_metrics=training_metrics
             )
             # Validate model.
             validation_loss = evaluate_model(
                 model=model,
                 dataloader=validation_dataloader,
                 criterion=validation_criterion,
-                metrics=tuple(vm.metric for vm in validation_metrics),
+                wandb_metrics=validation_metrics
             )
             # Print performance.
             print(
@@ -203,21 +212,20 @@ def training_loop(
             )
             # Log data to WandB.
             wandb_log = dict()
-            for split, loss, metrics in zip(splits, (training_loss, validation_loss), metrics):
+            for split, loss, wandb_metrics in zip(splits, (training_loss, validation_loss), split_wandb_metrics):
                 wandb_log[f"{split}/loss"] = loss
                 wandb_log.update(
                     {
                         f"{split}/{k}": v
-                        for metric in metrics
-                        for k, v in metric.asdict().items()
+                        for wbm in wandb_metrics
+                        for k, v in wbm.asdict().items()
                     }
                 )
             run.log(wandb_log, step=epoch)
             # Reset torcheval.metrics.Metric objects.
-            for tm in training_metrics:
-                tm.metric.reset()
-            for vm in validation_metrics:
-                vm.metric.reset()
+            for wandb_metrics in split_wandb_metrics:
+                for wbm in wandb_metrics:
+                    wbm.metric.reset()
         # ================================
         # Upload model weights.
         checkpoint_directory.mkdir(exist_ok=True)
