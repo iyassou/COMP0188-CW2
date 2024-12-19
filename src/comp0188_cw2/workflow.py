@@ -47,19 +47,25 @@ class WandBConfig:
             **self._scheduler.state_dict()
         }
 
-    def asdict(self) -> dict:
+    def wandb_init_kwargs(self) -> dict:
         """Returns the configuration dictionary passed to `wandb.init`"""
         config = dataclasses.asdict(self)
         config["optimiser"] = self.optimiser
         config["scheduler"] = self.scheduler
-        remove_keys = (
+        config = {k: v for k, v in config.items() if v is not None}
+        kwargs = {"project": self.project}
+        if self.group is not None:
+            kwargs["group"] = self.group
+        kwargs["config"] = config
+        exclude_keys = (
             "_optimiser",
             "_scheduler",
             "registry",
+            "project",
+            "group",
         )
-        for key in remove_keys:
-            del config[key]
-        return {k: v for k, v in config.items() if v is not None}
+        kwargs["config_exclude_keys"] = exclude_keys
+        return kwargs
 
 @dataclasses.dataclass
 class WandBMetric:
@@ -183,7 +189,7 @@ def training_loop(
         tuple(x for y in training_metrics.values() for x in y),
         tuple(x for y in validation_metrics.values() for x in y),
     )
-    run = wandb.init(**wandb_config.asdict())
+    run = wandb.init(**wandb_config.wandb_init_kwargs())
     try:
         torch.manual_seed(wandb_config.seed)
         epochs = wandb_config.epochs
