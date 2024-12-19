@@ -3,10 +3,13 @@ import numpy as np
 import torch
 import torcheval.metrics
 import tqdm
-import typing
 import wandb
 
 from pathlib import Path
+from typing import (
+    Any,
+    Callable,
+)
 
 @dataclasses.dataclass
 class WandBConfig:
@@ -60,17 +63,23 @@ class WandBConfig:
 
 @dataclasses.dataclass
 class WandBMetric:
-    names: tuple[str]
-    factory: typing.Callable[..., torcheval.metrics.Metric]
-    factory_kwargs: dict[str, typing.Any]
+    names: tuple[str, ...]
+    factory: Callable[..., torcheval.metrics.Metric]
+    factory_kwargs: dict[str, Any]
     metric: torcheval.metrics.Metric = dataclasses.field(init=False)
+    multiplier: int = 1
+    argmax: bool = False
 
     def __post_init__(self):
         self.metric = self.factory(**self.factory_kwargs)
-        if 'accuracy' in self.factory.__class__.__name__.casefold():
-            self.multiplier = 100
-        else:
-            self.multiplier = 1
+
+    def update(self, input: torch.Tensor, target: torch.Tensor):
+        if self.argmax:
+            target = torch.argmax(target, dim=1)
+        self.metric.update(input, target)
+
+    def reset(self):
+        self.metric.reset()
 
     def asdict(self) -> dict[str, float]:
         metric: torch.Tensor = self.multiplier * self.metric.compute()
@@ -121,13 +130,8 @@ def train_model_for_one_epoch(
         optimiser.step()
         losses.append(loss.item())
         for cut, wbms in wandb_metrics.items():
-            _pred: torch.Tensor  = prediction[:, cut]
-            _act: torch.Tensor   = y[:, cut]
             for wbm in wbms:
-                if "roc" in wbm.metric.__class__.__name__.casefold():
-                    wbm.metric.update(torch.argmax(_pred, dim=1), _act)
-                else:
-                    wbm.metric.update(_pred, _act)
+                wbm.update(prediction[:, cut], y[:, cut])
     if scheduler is not None:
         scheduler.step()
     return np.mean(losses)
@@ -153,13 +157,8 @@ def evaluate_model(
             loss = criterion(prediction, y)
             losses.append(loss.item())
             for cut, wbms in wandb_metrics.items():
-                _pred: torch.Tensor  = prediction[:, cut]
-                _act: torch.Tensor   = y[:, cut]
                 for wbm in wbms:
-                    if "roc" in wbm.metric.__class__.__name__.casefold():
-                        wbm.metric.update(torch.argmax(_pred, dim=1), _act)
-                    else:
-                        wbm.metric.update(_pred, _act)
+                    wbm.update(prediction[:, cut], y[:, cut])
     return np.mean(losses)
 
 def training_loop(
@@ -222,10 +221,10 @@ def training_loop(
                     }
                 )
             run.log(wandb_log, step=epoch)
-            # Reset torcheval.metrics.Metric objects.
+            # Reset metrics.
             for wandb_metrics in split_wandb_metrics:
                 for wbm in wandb_metrics:
-                    wbm.metric.reset()
+                    wbm.reset()
         # ================================
         # Upload model weights.
         checkpoint_directory.mkdir(exist_ok=True)
