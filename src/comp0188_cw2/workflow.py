@@ -56,7 +56,6 @@ class WandBConfig:
         kwargs = {"project": self.project}
         if self.group is not None:
             kwargs["group"] = self.group
-        kwargs["config"] = config
         exclude_keys = (
             "_optimiser",
             "_scheduler",
@@ -64,7 +63,7 @@ class WandBConfig:
             "project",
             "group",
         )
-        kwargs["config_exclude_keys"] = exclude_keys
+        kwargs["config"] = wandb.helper.parse_config(config, exclude=exclude_keys)
         return kwargs
 
 @dataclasses.dataclass
@@ -111,7 +110,7 @@ def load_wandb_api_key(file: Path=None):
         e.add_note("Missing Colab secret and wandb.json file, could not log in")
         raise
 
-def train_model_for_one_epoch(
+def train_for_one_epoch(
     model: torch.nn.Module,
     dataloader: torch.utils.data.DataLoader,
     optimiser: torch.optim.Optimizer,
@@ -142,7 +141,7 @@ def train_model_for_one_epoch(
         scheduler.step()
     return np.mean(losses)
 
-def evaluate_model(
+def evaluate(
     model: torch.nn.Module,
     dataloader: torch.utils.data.DataLoader,
     criterion: torch.nn.modules.loss._Loss,
@@ -195,7 +194,7 @@ def training_loop(
         epochs = wandb_config.epochs
         for epoch in range(epochs):
             # Train for a single epoch.
-            training_loss = train_model_for_one_epoch(
+            training_loss = train_for_one_epoch(
                 model=model,
                 dataloader=training_dataloader,
                 optimiser=optimiser,
@@ -204,7 +203,7 @@ def training_loop(
                 wandb_metrics=training_metrics
             )
             # Validate model.
-            validation_loss = evaluate_model(
+            validation_loss = evaluate(
                 model=model,
                 dataloader=validation_dataloader,
                 criterion=validation_criterion,
