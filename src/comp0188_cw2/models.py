@@ -99,25 +99,25 @@ class BaselineModel(torch.nn.Module):
             )
         )
     
-    def forward(self, images: torch.Tensor, dynamics: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         """Accepts the concatenated front camera and mounted camera observations,
         and the robot arm's dynamics. Outputs a 6-dimensional prediction of the
         position-velocity component and the one-hot encoding of the gripper's action.
         
         Parameters
         ----------
-        images: torch.Tensor
-            Shape [batch_size, 2, 224, 224], stems from:
-                torch.concat((front_cam_ob, mount_cam_ob), dim=0)
-        dynamics: torch.Tensor
-            Shape [batch_size, 15], stems from:
-                torch.concat((ee_cartesian_pos_ob, ee_cartesian_vel_ob, joint_pos_ob), dim=0)
+        X: tuple[torch.Tensor, torch.Tensor]
+            Contains two tensors:
+                1) `images`, with shape [batch_size, 2, 224, 224], stemming from:
+                    torch.concat((front_cam_ob, mount_cam_ob), dim=0)
+                2) `dynamics`, with shape [batch_size, 15], stemming from:
+                    torch.concat((ee_cartesian_pos_ob, ee_cartesian_vel_ob, joint_pos_ob), dim=0)
         
         Returns
         -------
         torch.Tensor
-            Shape [batch_size, 6]
-        """
+            Shape [batch_size, 6]"""
+        images, dynamics = X
         images = images.to(self.device)
         dynamics = dynamics.to(self.device)
         x = self.joint_cnn_encoder(images)
