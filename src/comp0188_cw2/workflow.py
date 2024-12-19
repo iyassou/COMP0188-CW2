@@ -73,12 +73,12 @@ class WandBMetric:
             self.multiplier = 1
 
     def asdict(self) -> dict[str, float]:
-        return dict(
-            zip(
-                self.names,
-                torch.ravel(self.metric.compute().item() * self.multiplier)
-            )
-        )
+        metric: torch.Tensor = self.multiplier * self.metric.compute()
+        metric = metric.tolist()
+        if not isinstance(metric, list):
+            # torch.Tensor.tolist returns a number for scalars
+            metric = [metric]
+        return dict(zip(self.names, metric))
 
 def load_wandb_api_key(file: Path=None):
     import os
