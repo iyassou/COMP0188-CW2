@@ -4,7 +4,6 @@ from .datatypes import (
     Observation,
 )
 
-import bisect
 import torch
 
 from pathlib import Path
@@ -18,20 +17,15 @@ class CustomDataset(torch.utils.data.Dataset):
             directory.glob("*.h5"),
             key=lambda x: int(x.stem.split("_")[-1]), # ascending order of suffix number
         )
-        self.chunks = tuple(Chunk(file) for file in h5_files)
-        acc = 0
-        self.cumulative_lengths = tuple(acc := acc + len(c) for c in self.chunks)
+        self.observations = [obs for file in h5_files for obs in Chunk(file)[:]]
 
     def __len__(self) -> int:
-        return self.cumulative_lengths[-1]
+        return len(self.observations)
     
     def __getitem__(self, j: int) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         if not (0 <= j < len(self)):
             raise IndexError(f"Index {j} out-of-bounds for container of length {len(self)}")
-        chunk_index: int = bisect.bisect(self.cumulative_lengths, j)
-        if chunk_index:
-            j -= self.cumulative_lengths[chunk_index - 1]
-        obs: Observation = self.chunks[chunk_index][j]
+        obs: Observation = self.observations[j]
 
         if self.transforms:
             for key, transform in self.transforms.items():
