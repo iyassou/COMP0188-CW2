@@ -189,10 +189,12 @@ def training_loop(
         tuple(x for y in validation_metrics.values() for x in y),
     )
     run = wandb.init(**wandb_config.wandb_init_kwargs())
+    checkpoint_directory /= run.name
+    checkpoint_directory.mkdir(exist_ok=True, parents=True)
     try:
         torch.manual_seed(wandb_config.seed)
         epochs = wandb_config.epochs
-        for epoch in range(epochs):
+        for epoch in range(1, epochs + 1):
             # Train for a single epoch.
             training_loss = train_for_one_epoch(
                 model=model,
@@ -211,7 +213,7 @@ def training_loop(
             )
             # Print performance.
             print(
-                f"Epoch: {epoch + 1} / {epochs} | Training Loss: {training_loss:.4f}"
+                f"Epoch: {epoch} / {epochs} | Training Loss: {training_loss:.4f}"
                 f" | Validation Loss: {validation_loss:.4f}"
             )
             # Log data to WandB.
@@ -230,14 +232,19 @@ def training_loop(
             for wandb_metrics in split_wandb_metrics:
                 for wbm in wandb_metrics:
                     wbm.reset()
-        # ================================
-        # Upload model weights.
-        checkpoint_directory.mkdir(exist_ok=True)
-        weights_filepath: Path = checkpoint_directory / f"{run.name}.pth"
-        with open(weights_filepath, "wb") as f:
-            torch.save(model.state_dict(), f)
-            artifact = wandb.Artifact(name=wandb_config.model, type="model")
-            artifact.add_file(weights_filepath)
+            # Upload checkpoint.
+            checkpoint_filepath: Path = checkpoint_directory / f"{run.name}_epoch{epoch}.pt"
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    'optimiser_state_dict': optimiser.state_dict(),
+                    'train/loss': training_loss,
+                },
+                checkpoint_filepath
+            )
+            artifact = wandb.Artifact(name=wandb_config.model, type="checkpoint")
+            artifact.add_file(checkpoint_filepath)
             logged_artifact = run.log_artifact(artifact)
             run.link_artifact(
                 artifact=logged_artifact,
