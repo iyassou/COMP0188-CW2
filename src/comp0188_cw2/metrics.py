@@ -20,11 +20,8 @@ class CosineSimilarity(torcheval.metrics.Metric[torch.Tensor]):
         input = input.to(self.device)
         target = target.to(self.device)
         cos = torch.nn.functional.cosine_similarity(input, target, dim=1, eps=self.eps)
-        if self.sum_cosine_similarity.ndim != cos.ndim:
-            self.sum_cosine_similarity = cos
-        else:
-            self.sum_cosine_similarity += cos
-        self.count += 1
+        self.sum_cosine_similarity += cos.sum()
+        self.count += cos.numel()
         return self
 
     def compute(self) -> torch.Tensor:
@@ -41,6 +38,8 @@ class MeanAbsoluteError(torcheval.metrics.Metric[torch.Tensor]):
             self,
             average: Optional[str]=None,
             device: Optional[torch.device]=None):
+        if average is not None and average != "macro":
+            raise ValueError(f"unknown average value: {average}")
         super().__init__(device=device)
         self.average = average
         self._add_state("sum_mae", torch.tensor(0.0, device=device))
@@ -50,13 +49,17 @@ class MeanAbsoluteError(torcheval.metrics.Metric[torch.Tensor]):
         input = input.to(self.device)
         target = target.to(self.device)
         mae = torch.abs(input - target)
-        if self.average == "macro":
-            mae = mae.mean(dim=1)
-        if self.sum_mae.ndim != mae.ndim:
-            self.sum_mae = mae
+        if self.average is None:
+            # bad hack because cba
+            if self.sum_mae.numel() != mae.size(1):
+                self.sum_mae = mae.sum(dim=0)
+            else:
+                self.sum_mae += mae.sum(dim=0)
+            self.count += mae.size(0)
         else:
-            self.sum_mae += mae
-        self.count += 1
+            # average == "macro"
+            self.sum_mae += mae.sum()
+            self.count += mae.numel()
         return self
     
     def compute(self) -> torch.Tensor:
