@@ -33,8 +33,6 @@ def dense_block(
     activation: torch.nn.Module,
     dtype: type,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
-    if dropout and batch_norm:
-        raise ValueError("are you sure about that?")
     return tuple(
         filter(
             lambda x: x is not None,
@@ -52,16 +50,26 @@ def dense_block(
         )
     )
 
-class BaselineModel(torch.nn.Module):
-    def __init__(self, dev: torch.device, dtype: type=torch.float16):
+class BaselineModelArchitecture(torch.nn.Module):
+    def __init__(
+            self,
+            joint_cnn_channels: tuple[int, ...],
+            dynamics_features: tuple[int, ...],
+            fusion_layer_features: tuple[int, ...],
+
+            dropout: float,
+            batch_norm: bool,
+            activation: torch.nn.Module,
+
+            dev: torch.device,
+            dtype: type):
         super().__init__()
         self.device = dev
 
-        channels = 2, 8, 16, 32
         self.joint_cnn_encoder = torch.nn.Sequential(
             *(
                 module
-                for in_channels, out_channels in zip(channels[:-1], channels[1:])
+                for in_channels, out_channels in zip(joint_cnn_channels[:-1], joint_cnn_channels[1:])
                 for module in cnn_block(
                     in_channels=in_channels, out_channels=out_channels,
                     kernel_size=(3, 3), stride=1, padding=1, dilation=1,
@@ -73,32 +81,40 @@ class BaselineModel(torch.nn.Module):
             torch.nn.Linear(256, 128, dtype=dtype, device=dev),
         )
 
-        dyn_features = 15, 256, 128
+        LAST_LAYER = len(dynamics_features) - 2
         self.dynamics_encoder = torch.nn.Sequential(
             *(
                 module
-                for in_features, out_features in zip(dyn_features[:-1], dyn_features[1:])
+                for J, (in_features, out_features) in enumerate(zip(dynamics_features[:-1], dynamics_features[1:]))
                 for module in dense_block(
                     in_features=in_features, out_features=out_features,
-                    dropout=None, batch_norm=False, activation=None,
+                    
+                    dropout=dropout if J != LAST_LAYER else None,
+                    batch_norm=batch_norm if J != LAST_LAYER else False,
+                    activation=activation if J != LAST_LAYER else None,
+                    
                     dtype=dtype, device=dev,
                 )
             )
         )
 
-        fl_features = 128, 64, 32, 6
+        LAST_LAYER = len(fusion_layer_features) - 2
         self.fusion_layer = torch.nn.Sequential(
             *(
                 module
-                for in_features, out_features in zip(fl_features[:-1], fl_features[1:])
+                for J, (in_features, out_features) in enumerate(zip(fusion_layer_features[:-1], fusion_layer_features[1:]))
                 for module in dense_block(
                     in_features=in_features, out_features=out_features,
-                    dropout=None, batch_norm=False, activation=None,
+
+                    dropout=dropout if J != LAST_LAYER else None,
+                    batch_norm=batch_norm if J != LAST_LAYER else False,
+                    activation=activation if J != LAST_LAYER else None,
+
                     dtype=dtype, device=dev,
                 )
             )
         )
-    
+
     def forward(self, X: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
         """Accepts the concatenated front camera and mounted camera observations,
         and the robot arm's dynamics. Outputs a 6-dimensional prediction of the
@@ -123,3 +139,20 @@ class BaselineModel(torch.nn.Module):
         x = self.joint_cnn_encoder(images)
         y = self.dynamics_encoder(dynamics)
         return self.fusion_layer(x + y)
+
+class VanillaBaselineModel(BaselineModelArchitecture):
+    JOINT_CNN_CHANNELS: tuple[int, ...] = (2, 8, 16, 32)
+    DYNAMICS_FEATURES: tuple[int, ...] = (15, 256, 128)
+    FUSION_LAYER_FEATURES: tuple[int, ...] = (128, 64, 32, 6)
+    def __init__(self, dev: torch.device, dtype: type):
+        super().__init__(
+            joint_cnn_channels=VanillaBaselineModel.JOINT_CNN_CHANNELS,
+            dynamics_features=VanillaBaselineModel.DYNAMICS_FEATURES,
+            fusion_layer_features=VanillaBaselineModel.FUSION_LAYER_FEATURES,
+            dropout=None,
+            batch_norm=False,
+            activation=None,
+            
+            dev=dev,
+            dtype=dtype
+        )
