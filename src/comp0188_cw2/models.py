@@ -43,7 +43,12 @@ def dense_block(
                     dtype=dtype,
                     device=device,
                 ),
-                torch.nn.BatchNorm1d(out_features) if batch_norm else None,
+                torch.nn.BatchNorm1d(
+                    out_features,
+                    eps=torch.finfo(dtype).tiny,
+                    dtype=dtype,
+                    device=device,
+                ) if batch_norm else None,
                 torch.nn.Dropout(dropout) if dropout else None,
                 activation,
             )
