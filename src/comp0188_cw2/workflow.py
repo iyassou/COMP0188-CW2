@@ -24,6 +24,7 @@ class WandBConfig:
     project: str = "comp0188-cw2"
     group: str = None
     registry: str = "ucabis4-ucl-org/wandb-registry-model"
+    extra_config: dict = None
 
     @property
     def optimiser(self) -> dict:
@@ -62,8 +63,11 @@ class WandBConfig:
             "registry",
             "project",
             "group",
+            "extra_config",
         )
         kwargs["config"] = wandb.helper.parse_config(config, exclude=exclude_keys)
+        if self.extra_config is not None:
+            kwargs["config"].update(self.extra_config)
         return kwargs
 
 @dataclasses.dataclass
