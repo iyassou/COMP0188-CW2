@@ -1,4 +1,5 @@
 import dataclasses
+import enum
 import numpy as np
 import torch
 import torcheval.metrics
@@ -10,6 +11,10 @@ from typing import (
     Any,
     Callable,
 )
+
+class LearningParadigm(enum.Enum):
+    SUPERVISED = 0
+    SELF_SUPERVISED = 1
 
 @dataclasses.dataclass
 class WandBConfig:
@@ -116,6 +121,7 @@ def load_wandb_api_key(file: Path=None):
 
 def train_for_one_epoch(
     model: torch.nn.Module,
+    learning_paradigm: LearningParadigm,
     dataloader: torch.utils.data.DataLoader,
     optimiser: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
@@ -134,7 +140,11 @@ def train_for_one_epoch(
     for X, y in tqdm.tqdm(dataloader, desc="Training"):
         optimiser.zero_grad()
         prediction = model(X)
-        loss = criterion(prediction, y)
+        if learning_paradigm is LearningParadigm.SUPERVISED:
+            comparand = y
+        elif learning_paradigm is LearningParadigm.SELF_SUPERVISED:
+            comparand = X
+        loss = criterion(prediction, comparand)
         loss.backward()
         optimiser.step()
         losses.append(loss.item())
@@ -147,6 +157,7 @@ def train_for_one_epoch(
 
 def evaluate(
     model: torch.nn.Module,
+    learning_paradigm: LearningParadigm,
     dataloader: torch.utils.data.DataLoader,
     criterion: torch.nn.modules.loss._Loss,
     wandb_metrics: dict[slice, tuple[WandBMetric, ...]]) -> float:
@@ -163,7 +174,11 @@ def evaluate(
     with torch.no_grad():
         for X, y in tqdm.tqdm(dataloader, desc="Validation"):
             prediction = model(X)
-            loss = criterion(prediction, y)
+            if learning_paradigm is LearningParadigm.SUPERVISED:
+                comparand = y
+            elif learning_paradigm is LearningParadigm.SELF_SUPERVISED:
+                comparand = X
+            loss = criterion(prediction, comparand)
             losses.append(loss.item())
             for cut, wbms in wandb_metrics.items():
                 for wbm in wbms:
@@ -173,6 +188,7 @@ def evaluate(
 def training_loop(
     wandb_config: WandBConfig,
     model: torch.nn.Module,
+    learning_paradigm: LearningParadigm,
     checkpoint_directory: Path,
 
     training_dataloader: torch.utils.data.DataLoader,
@@ -187,6 +203,11 @@ def training_loop(
     training_metrics: dict[slice, tuple[WandBMetric, ...]],
     validation_metrics: dict[slice, tuple[WandBMetric, ...]]):
     """Big try-finally that terminates the WandB run regardless."""
+    if learning_paradigm not in LearningParadigm:
+        raise ValueError(
+            f"unrecognised `learning_paradigm` {repr(learning_paradigm)}, "
+            f"must be one of: {', '.join(LearningParadigm._member_names_)}"
+        )
     splits: tuple[str, str] = "train", "val"
     split_wandb_metrics = (
         tuple(x for y in training_metrics.values() for x in y),
@@ -202,6 +223,7 @@ def training_loop(
             # Train for a single epoch.
             training_loss = train_for_one_epoch(
                 model=model,
+                learning_paradigm=learning_paradigm,
                 dataloader=training_dataloader,
                 optimiser=optimiser,
                 scheduler=scheduler,
@@ -211,6 +233,7 @@ def training_loop(
             # Validate model.
             validation_loss = evaluate(
                 model=model,
+                learning_paradigm=learning_paradigm,
                 dataloader=validation_dataloader,
                 criterion=validation_criterion,
                 wandb_metrics=validation_metrics
