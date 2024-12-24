@@ -7,6 +7,7 @@ import matplotlib.animation
 import matplotlib.pyplot as plt
 
 from pathlib import Path
+from typing import Optional
 
 def _textual_data_from_observation(obs: Observation, decimal: int) -> str:
     return "\n\n".join((
@@ -17,7 +18,6 @@ def _textual_data_from_observation(obs: Observation, decimal: int) -> str:
         rf"Gripper $\Delta$XYZ: {obs.ee_cartesian_vel_ob[:3].round(decimal)}",
         rf"Gripper $\Delta$(Roll, Pitch, Yaw): {obs.ee_cartesian_vel_ob[3:].round(decimal)}",
         f"Gripper Joints: {obs.joint_pos_ob.round(decimal)}",
-        f"Terminal? {'Yes' if obs.terminals else 'No'}",
     ))
 
 def display_observation(obs: Observation, axes: matplotlib.axes.Axes):
@@ -32,7 +32,9 @@ def display_observation(obs: Observation, axes: matplotlib.axes.Axes):
     textual = _textual_data_from_observation(obs, decimal=2)
     axes[2].text(0.5, 0.5, textual, fontsize=20, ha="center", va="center")
 
-def display_chunk(chunk: Trajectory, fig: matplotlib.figure.Figure, axes: matplotlib.axes.Axes, file: Path):
+def display_chunk(
+        chunk: Chunk, fig: matplotlib.figure.Figure, axes: matplotlib.axes.Axes, file: Path,
+        frames: Optional[int]=None):
     """Basic rendering of a chunk i.e. collection of sequential observations."""
     axes = axes.reshape(-1)
     for ax in axes:
@@ -57,18 +59,18 @@ def display_chunk(chunk: Trajectory, fig: matplotlib.figure.Figure, axes: matplo
         text_display.set_text(_textual_data_from_observation(obs, decimal))
         return front_cam_display, mount_cam_display, text_display
     
-    _ = matplotlib.animation.FuncAnimation(
-        fig, update, frames=len(chunk), interval=200, blit=False, # text gets funky when blitting
+    ani = matplotlib.animation.FuncAnimation(
+        fig, update, frames=frames or len(chunk), interval=75, blit=False, # text gets funky when blitting
     )
-
-    plt.show()
+    ani.save(gif)
 
 if __name__ == '__main__':
-    from .datatypes import Trajectory
+    from .datatypes import Chunk
     from pathlib import Path
+    root = Path(__file__).parent.parent.parent.parent / "Cw2_upload"
     chunk = Chunk(
-        Path(__file__).parent.parent / "data" / "debug" / "train" / "train_0.h5" # frames [0, 74)
+        root / "data" / "debug" / "train" / "train_0.h5"
     )
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    gif = Path(__file__).parent.parent / "test.gif"
-    display_chunk(chunk, fig, axes, gif)
+    gif = root / "figures" / "trajectory.gif"
+    display_chunk(chunk, fig, axes, gif, frames=74)
