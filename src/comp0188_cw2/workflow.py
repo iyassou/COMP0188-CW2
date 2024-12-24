@@ -6,11 +6,9 @@ import torcheval.metrics
 import tqdm
 import wandb
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-)
+from typing import Optional
 
 class LearningParadigm(enum.Enum):
     SUPERVISED = 0
@@ -26,10 +24,10 @@ class WandBConfig:
     validation_criterion: str
     _optimiser: torch.optim.Optimizer
     _scheduler: torch.optim.lr_scheduler.LRScheduler
-    project: str = "comp0188-cw2"
-    group: str = None
-    registry: str = "ucabis4-ucl-org/wandb-registry-model"
-    extra_config: dict = None
+    project: Optional[str] = "comp0188-cw2"
+    group: Optional[str] = None
+    registry: Optional[str] = "ucabis4-ucl-org/wandb-registry-model"
+    extra_config: Optional[Mapping] = None
 
     @property
     def optimiser(self) -> dict:
@@ -78,19 +76,22 @@ class WandBConfig:
 @dataclasses.dataclass
 class WandBMetric:
     names: tuple[str, ...]
-    factory: Callable[..., torcheval.metrics.Metric]
-    factory_kwargs: dict[str, Any]
+    factory: callable[..., torcheval.metrics.Metric]
+    factory_kwargs: Mapping[str, ...] # pyright: ignore[reportInvalidTypeForm]
     metric: torcheval.metrics.Metric = dataclasses.field(init=False)
-    multiplier: int = 1
-    argmax: bool = False
+    multiplier: Optional[int] = 1
+    argmax: Optional[bool] = False
 
     def __post_init__(self):
         self.metric = self.factory(**self.factory_kwargs)
 
     def update(self, input: torch.Tensor, target: torch.Tensor):
-        if self.argmax:
-            target = torch.argmax(target, dim=1)
-        self.metric.update(input, target)
+        if target is not None:
+            if self.argmax:
+                target = torch.argmax(target, dim=1)
+            self.metric.update(input, target)
+        else:
+            self.metric.update(input)
 
     def reset(self):
         self.metric.reset()
@@ -103,7 +104,7 @@ class WandBMetric:
             metric = [metric]
         return dict(zip(self.names, metric))
 
-def load_wandb_api_key(file: Path=None):
+def load_wandb_api_key(file: Optional[Path]=None):
     import os
     key = "WANDB_API_KEY"
     try:
@@ -126,15 +127,13 @@ def train_for_one_epoch(
     optimiser: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     criterion: torch.nn.modules.loss._Loss,
-    wandb_metrics: dict[slice, tuple[WandBMetric, ...]]) -> float:
+    wandb_metrics: Mapping[tuple[callable, callable], tuple[WandBMetric, ...]]) -> float:
     """Trains the model for a single epoch on the supplied DataLoader and
     returns the mean loss.
     
     Notes
     -----
-    `scheduler` and `wandb_metrics` can be set to None."""
-    if wandb_metrics is None:
-        wandb_metrics = {}
+    `scheduler` can be set to None."""
     model.train()
     losses = []
     for X, y in tqdm.tqdm(dataloader, desc="Training"):
@@ -148,9 +147,9 @@ def train_for_one_epoch(
         loss.backward()
         optimiser.step()
         losses.append(loss.item())
-        for cut, wbms in wandb_metrics.items():
+        for (select_p, select_c), wbms in wandb_metrics.items():
             for wbm in wbms:
-                wbm.update(prediction[:, cut], y[:, cut])
+                wbm.update(select_p(prediction), select_c(comparand))
     if scheduler is not None:
         scheduler.step()
     return np.mean(losses)
@@ -160,15 +159,9 @@ def evaluate(
     learning_paradigm: LearningParadigm,
     dataloader: torch.utils.data.DataLoader,
     criterion: torch.nn.modules.loss._Loss,
-    wandb_metrics: dict[slice, tuple[WandBMetric, ...]]) -> float:
+    wandb_metrics: Mapping[tuple[callable, callable], tuple[WandBMetric, ...]]) -> float:
     """Evaluates the model's performance on the supplied DataLoader, updates
-    the given metrics, and returns the mean loss.
-    
-    Notes
-    -----
-    `wandb_metrics` can be set to None."""
-    if wandb_metrics is None:
-        wandb_metrics = {}
+    the given metrics, and returns the mean loss."""
     model.eval()
     losses = []
     with torch.no_grad():
@@ -180,9 +173,9 @@ def evaluate(
                 comparand = X
             loss = criterion(prediction, comparand)
             losses.append(loss.item())
-            for cut, wbms in wandb_metrics.items():
+            for (select_p, select_c), wbms in wandb_metrics.items():
                 for wbm in wbms:
-                    wbm.update(prediction[:, cut], y[:, cut])
+                    wbm.update(select_p(prediction), select_c(comparand))
     return np.mean(losses)
 
 def training_loop(
@@ -200,14 +193,20 @@ def training_loop(
     training_criterion: torch.nn.modules.loss._Loss,
     validation_criterion: torch.nn.modules.loss._Loss,
     
-    training_metrics: dict[slice, tuple[WandBMetric, ...]],
-    validation_metrics: dict[slice, tuple[WandBMetric, ...]]):
+    training_metrics: Optional[
+        Mapping[tuple[callable, callable], tuple[WandBMetric, ...]]]=None,
+    validation_metrics: Optional[
+        Mapping[tuple[callable, callable], tuple[WandBMetric, ...]]]=None):
     """Big try-finally that terminates the WandB run regardless."""
     if learning_paradigm not in LearningParadigm:
         raise ValueError(
             f"unrecognised `learning_paradigm` {repr(learning_paradigm)}, "
             f"must be one of: {', '.join(LearningParadigm._member_names_)}"
         )
+    if training_metrics is None:
+        training_metrics = {}
+    if validation_metrics is None:
+        validation_metrics = {}
     splits: tuple[str, str] = "train", "val"
     split_wandb_metrics = (
         tuple(x for y in training_metrics.values() for x in y),
