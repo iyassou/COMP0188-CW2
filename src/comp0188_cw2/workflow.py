@@ -8,7 +8,7 @@ import wandb
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 class LearningParadigm(enum.Enum):
     SUPERVISED = 0
@@ -76,7 +76,7 @@ class WandBConfig:
 @dataclasses.dataclass
 class WandBMetric:
     names: tuple[str, ...]
-    factory: callable[..., torcheval.metrics.Metric]
+    factory: Callable[..., torcheval.metrics.Metric]
     factory_kwargs: Mapping[str, ...] # pyright: ignore[reportInvalidTypeForm]
     metric: torcheval.metrics.Metric = dataclasses.field(init=False)
     multiplier: Optional[int] = 1
