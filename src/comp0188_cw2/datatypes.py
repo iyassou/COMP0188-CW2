@@ -39,7 +39,7 @@ class Observation(_ObservationBase):
 @dataclasses.dataclass
 class Chunk:
     file: Path
-    n: int = None
+    n: typing.Optional[int] = None
 
     def __len__(self) -> int:
         if self.n is None:
@@ -48,7 +48,7 @@ class Chunk:
                 self.n = len(f[next(iter(f.keys()))])
         return self.n
     
-    def __getitem__(self, j: int|slice) -> Observation | list[Observation]:
+    def __getitem__(self, j: typing.Union[int, slice]) -> typing.Union[Observation, typing.List[Observation]]:
         if not isinstance(j, (int, slice)):
             raise TypeError(f"Unsupported index type: {repr(type(j))}")
         

@@ -7,7 +7,7 @@ def Linear_block(
     dropout: float,
     batch_norm: bool,
     activation: torch.nn.Module,
-    dtype: type,
+    dtype: torch.dtype,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
     return tuple(
         filter(
@@ -40,7 +40,7 @@ def Conv2d_block(
     dilation: int,
     activation: torch.nn.Module,
     max_pool2d_kernel_size: tuple[int, int],
-    dtype: type,
+    dtype: torch.dtype,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
     return tuple(
         filter(
@@ -73,7 +73,7 @@ def ConvTranspose2d_block(
     output_padding: int,
     dilation: int,
     activation: torch.nn.Module,
-    dtype: type,
+    dtype: torch.dtype,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
     return tuple(
         filter(
@@ -100,7 +100,7 @@ def chain_Linear_blocks(
     dropout: float,
     batch_norm: bool,
     activation: torch.nn.Module,
-    dtype: type,
+    dtype: torch.dtype,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
     LAST_LAYER = max(0, len(features) - 2)
     return tuple(
@@ -125,7 +125,7 @@ def chain_Conv2d_blocks(
     dilation: int,
     activation: torch.nn.Module,
     max_pool2d_kernel_size: tuple[int, int],
-    dtype: type,
+    dtype: torch.dtype,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
     return tuple(
         module
@@ -147,7 +147,7 @@ def chain_ConvTranspose2d_blocks(
     output_padding: int,
     dilation: int,
     activation: torch.nn.Module,
-    dtype: type,
+    dtype: torch.dtype,
     device: torch.device) -> tuple[torch.nn.Module, ...]:
     LAST_LAYER = max(0, len(channels) - 2)
     return tuple(
@@ -174,7 +174,7 @@ class BaselineModelArchitecture(torch.nn.Module):
             activation: torch.nn.Module,
 
             device: torch.device,
-            dtype: type):
+            dtype: torch.dtype):
         super().__init__()
         self.device = device
 
@@ -235,7 +235,7 @@ class VanillaBaselineModel(BaselineModelArchitecture):
     JOINT_CNN_CHANNELS: tuple[int, ...] = (2, 8, 16, 32)
     DYNAMICS_FEATURES: tuple[int, ...] = (15, 256, 128)
     FUSION_LAYER_FEATURES: tuple[int, ...] = (128, 64, 32, 6)
-    def __init__(self, device: torch.device, dtype: type):
+    def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
             joint_cnn_channels=VanillaBaselineModel.JOINT_CNN_CHANNELS,
             dynamics_features=VanillaBaselineModel.DYNAMICS_FEATURES,
@@ -253,7 +253,7 @@ class VariationalAutoEncoder(torch.nn.Module):
             self,
             latent_space_dimensions: int,
             device: torch.device,
-            dtype: type):
+            dtype: torch.dtype):
         super().__init__()
         self.channels = 2, 32, 64, 128, 256, 512
         # NOTE: stride=2 so image dimensions go: 224 => 112 => 56 => 28 => 14 => 7

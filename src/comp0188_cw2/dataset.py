@@ -6,12 +6,14 @@ from .datatypes import (
 
 import torch
 
+from collections.abc import Mapping
 from pathlib import Path
 from torchvision.transforms import v2
 
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, directory: Path, transforms: dict[str, v2.Transform], dev: torch.device):
-        self.device = dev
+    def __init__(self, directory: Path, transforms: Mapping[str, v2.Transform], device: torch.device, dtype: torch.dtype):
+        self.device = device
+        self.dtype = dtype
         self.observations = []
         h5_files = sorted(
             directory.glob("*.h5"),
@@ -48,7 +50,7 @@ class CustomDataset(torch.utils.data.Dataset):
                 torch.nn.functional.one_hot(
                     torch.tensor(obs.actions[3].item(), dtype=torch.long, device=self.device),
                     num_classes=len(GripperAction),
-                ).type(torch.float16)
+                ).type(self.dtype)
             ), dim=0
         )
 
