@@ -251,13 +251,14 @@ class VanillaBaselineModel(BaselineModelArchitecture):
 class VariationalAutoEncoder(torch.nn.Module):
     def __init__(
             self,
+            channels: tuple[int, ...],
+            last_image_dimensions: int,
             latent_space_dimensions: int,
             device: torch.device,
             dtype: torch.dtype):
         super().__init__()
-        self.channels = 2, 32, 64, 128, 256, 512
-        # NOTE: stride=2 so image dimensions go: 224 => 112 => 56 => 28 => 14 => 7
-        self.last_image_dimensions = 7
+        self.channels = channels
+        self.last_image_dimensions = last_image_dimensions
         self.latent_space_dimensions = latent_space_dimensions
         self.device = device
         self.dtype = dtype
