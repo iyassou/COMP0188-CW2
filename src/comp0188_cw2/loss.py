@@ -3,6 +3,31 @@ import typing
 
 BetaVAEReconstructionLoss = typing.Literal["mse", "bce"]
 
+def kl_divergence_special_case(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+    """Returns the KL divergence between an arbitrary Gaussian and a normal Gaussian.
+    Computes the closed-form.
+    
+    Parameters
+    ----------
+    mu: torch.Tensor
+        The (not necessarily) non-normal Gaussian's mean, with shape:
+            [batch_size, x]
+    logvar: torch.Tensor
+        The logarithm of the (not necessarily) non-normal Gaussian's variance, with shape:
+            [batch_size, x]
+
+    Notes
+    -----
+    Batch normalises the KL divergence.
+            
+    Returns
+    -------
+    torch.Tensor"""
+    batch_size = mu.size(0)
+    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    kl_batch_norm = kl / batch_size
+    return kl_batch_norm
+
 class BalancedMSECrossEntropyLoss(torch.nn.modules.loss._Loss):
     """Balanced loss, equally weighting the MSE loss of the position-velocity
     component and the cross-entropy loss of the gripper component."""
@@ -72,16 +97,14 @@ class BetaVAELoss(torch.nn.modules.loss._Loss):
         DOES NOT USE THE DYNAMICS DATA! It's just convenient to keep the `forward` function signatures
         the same and drop the unused data on a per-case basis rather than change everything elsewhere.
         
-        Uses the closed-form of the KL divergence between an arbitrary Gaussian and a
-        normal Gaussian rather than `torch.nn.KLDivLoss`.
+        Uses the closed-form of the KL divergence between an arbitrary Gaussian and a normal Gaussian.
 
         Returns
         -------
         torch.Tensor
             Sum of the reconstruction loss and the beta-weighted KL divergence"""
         reconstruction, mu, logvar = prediction
-        batch_size = reconstruction.size(0)
         images, _ = actual
         r_loss = self.reconstruction_loss(reconstruction, images)
-        kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / batch_size
+        kl_loss = kl_divergence_special_case(mu, logvar)
         return r_loss + self.beta * kl_loss
