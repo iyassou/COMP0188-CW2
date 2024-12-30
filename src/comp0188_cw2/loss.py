@@ -2,31 +2,27 @@ import torch
 import typing
 
 BetaVAEReconstructionLoss = typing.Literal["mse", "bce"]
+BetaVAEReduction = typing.Literal["mean", "sum"]
 
-def kl_divergence_special_case(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-    """Returns the KL divergence between an arbitrary Gaussian and a normal Gaussian.
-    Computes the closed-form.
+def kl_divergence_special_case(mu: torch.Tensor, logvar: torch.Tensor, reduction: BetaVAEReduction) -> torch.Tensor:
+    """Returns the closed form KL divergence between an arbitrary Gaussian and a normal Gaussian.
     
     Parameters
     ----------
     mu: torch.Tensor
-        The (not necessarily) non-normal Gaussian's mean, with shape:
-            [batch_size, x]
+        The (not necessarily) non-normal Gaussian's mean, shape:
+                [batch_size, x]
     logvar: torch.Tensor
-        The logarithm of the (not necessarily) non-normal Gaussian's variance, with shape:
-            [batch_size, x]
-
-    Notes
-    -----
-    Batch normalises the KL divergence.
-            
+        The logarithm of the (not necessarily) non-normal Gaussian's variance, shape:
+                [batch_size, x]
+    
     Returns
     -------
     torch.Tensor"""
-    batch_size = mu.size(0)
     kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    kl_batch_norm = kl / batch_size
-    return kl_batch_norm
+    if reduction == "mean":
+        kl = kl / mu.size(0)
+    return kl
 
 class BalancedMSECrossEntropyLoss(torch.nn.modules.loss._Loss):
     """Balanced loss, equally weighting the MSE loss of the position-velocity
@@ -60,34 +56,40 @@ class BalancedMSECrossEntropyLoss(torch.nn.modules.loss._Loss):
 class BetaVAELoss(torch.nn.modules.loss._Loss):
     """Parametrised loss function for beta variational autoencoders.
     Returns the sum of the reconstruction loss and the beta-weighted KL divergence."""
-    def __init__(self, beta: float, reconstruction_loss: BetaVAEReconstructionLoss):
+    def __init__(self, reconstruction_loss: BetaVAEReconstructionLoss, reduction: BetaVAEReduction):
         super().__init__()
         if reconstruction_loss not in typing.get_args(BetaVAEReconstructionLoss):
             raise ValueError(
                 f"unrecognised `reconstruction_loss` {repr(reconstruction_loss)}, "
                 f"must be one of: {', '.join(map(repr, typing.get_args(BetaVAEReconstructionLoss)))}"
             )
+        if reduction not in typing.get_args(BetaVAEReduction):
+            raise ValueError(
+                f"unrecognised `reduction` {repr(reconstruction_loss)}, "
+                f"must be one of: {', '.join(map(repr, typing.get_args(BetaVAEReduction)))}"
+            )
         
-        self.beta = beta
+        self.beta = torch.tensor(0.0, requires_grad=False)
+        self.reduction = reduction
         if reconstruction_loss == "mse":
-            self.reconstruction_loss = torch.nn.MSELoss(reduction="mean")
+            self.reconstruction_loss = torch.nn.MSELoss(reduction=reduction)
         else:
-            self.reconstruction_loss = torch.nn.BCELoss(reduction="mean")
+            self.reconstruction_loss = torch.nn.BCELoss(reduction=reduction)
 
     def forward(
             self, 
             prediction: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
             actual: tuple[torch.Tensor, torch.Tensor]
         ) -> torch.Tensor:
-        """Accepts a tuple comprising the reconstruction and two latent space distribution
-        parameters (mean and log of the variance), and the input data fed to the model.
+        """Accepts a tuple comprising the reconstruction and latent space vectors' parameters
+        (mean and log of the variance), and the input data fed to the model.
         
         Parameters
         ----------
         prediction: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-            (0) VAE's reconstruction, with shape            [batch_size, 2, 224, 224]
-            (1) Latent space's mean, with shape             [batch_size, latent_space_dimensions]
-            (2) Log of latent space's variance, with shape  [batch_size, latent_space_dimensions]
+            (0) VAE's reconstruction, with shape                    [batch_size, 2, 224, 224]
+            (1) Latent space vectors' means, with shape             [batch_size, latent_space_dimension]
+            (2) Log of latent space vectors' variances, with shape  [batch_size, latent_space_dimension]
         actual: tuple[torch.Tensor, torch.Tensor]
             (0) `images`, with shape                        [batch_size, 2, 224, 224]
             (1) `dynamics`, with shape                      [batch_size, 15]
@@ -103,8 +105,8 @@ class BetaVAELoss(torch.nn.modules.loss._Loss):
         -------
         torch.Tensor
             Sum of the reconstruction loss and the beta-weighted KL divergence"""
-        reconstruction, mu, logvar = prediction
+        recon, mu, logvar = prediction
         images, _ = actual
-        r_loss = self.reconstruction_loss(reconstruction, images)
-        kl_loss = kl_divergence_special_case(mu, logvar)
+        r_loss = self.reconstruction_loss(recon, images)
+        kl_loss = kl_divergence_special_case(mu, logvar, self.reduction)
         return r_loss + self.beta * kl_loss
