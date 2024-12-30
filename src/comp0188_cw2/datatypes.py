@@ -7,12 +7,16 @@ import typing
 
 from pathlib import Path
 
+class Stepper(typing.Protocol):
+    """torch.optim.lr_scheduler._LRScheduler superset"""
+    def step(self):
+        ...
+
 V2              = typing.Annotated[npt.NDArray[np.float16], typing.Literal[2]]
 V4              = typing.Annotated[npt.NDArray[np.float16], typing.Literal[4]]
 V6              = typing.Annotated[npt.NDArray[np.float16], typing.Literal[6]]
 V7              = typing.Annotated[npt.NDArray[np.float16], typing.Literal[7]]
 Grayscale       = typing.Annotated[npt.NDArray[np.float16], typing.Literal["H", "W"]]
-BatchGrayscale  = typing.Annotated[npt.NDArray[np.float16], typing.Literal["B", "H", "W"]]
 
 class GripperAction(enum.Enum):
     OPEN     = 0
@@ -55,8 +59,6 @@ class Chunk:
         if isinstance(j, int):
             if j < 0:
                 j %= len(self)
-            if not (0 <= j < len(self)):
-                raise IndexError(f"Index {j} out of bounds for container of length {len(self)}")
         else:
             start, stop, step = j.start, j.stop, j.step
             if start is not None and start < 0:
@@ -67,7 +69,7 @@ class Chunk:
             stop = stop or len(self)
             step = step or 1
             if start > stop:
-                raise ValueError(f"Invalid slice {j}")
+                raise IndexError(f"Invalid slice {j}")
             j = range(start, stop, step)
 
         with h5py.File(self.file, "r") as f:
@@ -75,4 +77,5 @@ class Chunk:
 
         if isinstance(j, int):
             return Observation(**data)
+        j = range(len(j))
         return [Observation(**{k: v[m] for k, v in data.items()}) for m in j]
