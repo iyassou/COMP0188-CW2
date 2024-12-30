@@ -1,3 +1,5 @@
+from comp0188_cw2.datatypes import Stepper
+
 import dataclasses
 import enum
 import numpy as np
@@ -5,10 +7,11 @@ import torch
 import torcheval.metrics
 import tqdm
 import wandb
+import warnings
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 class LearningParadigm(enum.Enum):
     SUPERVISED = 0
@@ -70,6 +73,12 @@ class WandBConfig:
         )
         kwargs["config"] = wandb.helper.parse_config(config, exclude=exclude_keys)
         if self.extra_config is not None:
+            intersection = kwargs["config"].keys() & self.extra_config.keys()
+            if intersection:
+                warnings.warn(
+                    f"Shared keys will be overwritten by extra_config: {intersection}",
+                    UserWarning
+                )
             kwargs["config"].update(self.extra_config)
         return kwargs
 
@@ -125,15 +134,11 @@ def train_for_one_epoch(
     learning_paradigm: LearningParadigm,
     dataloader: torch.utils.data.DataLoader,
     optimiser: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    schedulers: Iterable[Stepper],
     criterion: torch.nn.modules.loss._Loss,
     wandb_metrics: Mapping[tuple[callable, callable], tuple[WandBMetric, ...]]) -> float:
     """Trains the model for a single epoch on the supplied DataLoader and
-    returns the mean loss.
-    
-    Notes
-    -----
-    `scheduler` can be set to None."""
+    returns the mean loss."""
     model.train()
     losses = []
     for X, y in tqdm.tqdm(dataloader, desc="Training"):
@@ -150,7 +155,7 @@ def train_for_one_epoch(
         for (select_p, select_c), wbms in wandb_metrics.items():
             for wbm in wbms:
                 wbm.update(select_p(prediction), select_c(comparand))
-    if scheduler is not None:
+    for scheduler in schedulers:
         scheduler.step()
     return np.mean(losses)
 
@@ -183,12 +188,13 @@ def training_loop(
     model: torch.nn.Module,
     learning_paradigm: LearningParadigm,
     checkpoint_directory: Path,
+    checkpoint_every: int,
 
     training_dataloader: torch.utils.data.DataLoader,
     validation_dataloader: torch.utils.data.DataLoader,
 
     optimiser: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.LRScheduler,
+    schedulers: Iterable[Stepper],
 
     training_criterion: torch.nn.modules.loss._Loss,
     validation_criterion: torch.nn.modules.loss._Loss,
@@ -203,6 +209,8 @@ def training_loop(
             f"unrecognised `learning_paradigm` {repr(learning_paradigm)}, "
             f"must be one of: {', '.join(LearningParadigm._member_names_)}"
         )
+    if schedulers is None:
+        schedulers = ()
     if training_metrics is None:
         training_metrics = {}
     if validation_metrics is None:
@@ -225,7 +233,7 @@ def training_loop(
                 learning_paradigm=learning_paradigm,
                 dataloader=training_dataloader,
                 optimiser=optimiser,
-                scheduler=scheduler,
+                schedulers=schedulers,
                 criterion=training_criterion,
                 wandb_metrics=training_metrics
             )
@@ -259,6 +267,9 @@ def training_loop(
                 for wbm in wandb_metrics:
                     wbm.reset()
             # Upload checkpoint.
+            # NOTE: Always uploads the last epoch's checkpoint.
+            if epoch != epochs and epoch % checkpoint_every:
+                continue
             checkpoint_filepath: Path = checkpoint_directory / f"{run.name}_epoch{epoch}.pt"
             torch.save(
                 {
