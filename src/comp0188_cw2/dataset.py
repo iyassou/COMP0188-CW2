@@ -35,26 +35,26 @@ class CustomDataset(torch.utils.data.Dataset):
 
         # Observations
         images = torch.concat((obs.front_cam_ob, obs.mount_cam_ob), dim=0)
+        images = images.type(self.dtype)
         dynamics = torch.concat(
             (
                 obs.ee_cartesian_pos_ob,
                 obs.ee_cartesian_vel_ob,
                 obs.joint_pos_ob
             ), dim=0)
+        dynamics = dynamics.type(self.dtype)
         
         # Actions
-        delta_dynamics = obs.actions[:3].to(self.device)
-        actions = torch.concat(
-            (
-                delta_dynamics,
-                torch.nn.functional.one_hot(
-                    torch.tensor(obs.actions[3].item(), dtype=torch.long, device=self.device),
-                    num_classes=len(GripperAction),
-                ).type(self.dtype)
-            ), dim=0
+        delta_dynamics = obs.actions[:3]
+        delta_dynamics = delta_dynamics.type(self.dtype)
+        delta_dynamics = delta_dynamics.to(self.device)
+        one_hot = torch.nn.functional.one_hot(
+            torch.tensor(obs.actions[3].item(), dtype=torch.long, device=self.device),
+            num_classes=len(GripperAction),
         )
+        one_hot = one_hot.type(self.dtype)
+        actions = torch.concat((delta_dynamics, one_hot), dim=0)
 
         images = images.to(self.device)
         dynamics = dynamics.to(self.device)
-        actions = actions.to(self.device)
         return (images, dynamics), actions
