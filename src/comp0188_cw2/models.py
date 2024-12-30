@@ -8,26 +8,24 @@ def Linear_block(
     batch_norm: bool,
     activation: torch.nn.Module,
     dtype: torch.dtype,
-    device: torch.device) -> tuple[torch.nn.Module, ...]:
-    return tuple(
-        filter(
-            lambda x: x is not None,
-            (
-                torch.nn.Linear(
-                    in_features=in_features,
-                    out_features=out_features,
-                    dtype=dtype,
-                    device=device,
-                ),
-                torch.nn.BatchNorm1d(
-                    out_features,
-                    eps=torch.finfo(dtype).tiny,
-                    dtype=dtype,
-                    device=device,
-                ) if batch_norm else None,
-                torch.nn.Dropout(dropout) if dropout else None,
-                activation,
-            )
+    device: torch.device) -> filter:
+    return filter(
+        lambda x: x is not None,
+        (
+            torch.nn.Linear(
+                in_features=in_features,
+                out_features=out_features,
+                dtype=dtype,
+                device=device,
+            ),
+            torch.nn.BatchNorm1d(
+                out_features,
+                eps=torch.finfo(dtype).tiny,
+                dtype=dtype,
+                device=device,
+            ) if batch_norm else None,
+            torch.nn.Dropout(dropout) if dropout else None,
+            activation,
         )
     )
 
@@ -41,26 +39,25 @@ def Conv2d_block(
     activation: torch.nn.Module,
     max_pool2d_kernel_size: tuple[int, int],
     dtype: torch.dtype,
-    device: torch.device) -> tuple[torch.nn.Module, ...]:
-    return tuple(
-        filter(
-            lambda x: x is not None,
-            (
-                torch.nn.Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=kernel_size,
-                    stride=stride,
-                    padding=padding,
-                    dilation=dilation,
-                    dtype=dtype,
-                    device=device
-                ),
-                activation,
-                torch.nn.MaxPool2d(
-                    kernel_size=max_pool2d_kernel_size
-                ) if max_pool2d_kernel_size is not None else None,
-            )
+    device: torch.device) -> filter:
+    return filter(
+        lambda x: x is not None,
+        (
+            torch.nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                dtype=dtype,
+                device=device
+            ),
+
+            activation,
+
+            torch.nn.MaxPool2d(kernel_size=max_pool2d_kernel_size)
+            if max_pool2d_kernel_size else None,
         )
     )
 
@@ -74,24 +71,22 @@ def ConvTranspose2d_block(
     dilation: int,
     activation: torch.nn.Module,
     dtype: torch.dtype,
-    device: torch.device) -> tuple[torch.nn.Module, ...]:
-    return tuple(
-        filter(
-            lambda x: x is not None,
-            (
-                torch.nn.ConvTranspose2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=kernel_size,
-                    stride=stride,
-                    padding=padding,
-                    output_padding=output_padding,
-                    dilation=dilation,
-                    dtype=dtype,
-                    device=device
-                ),
-                activation,
-            )
+    device: torch.device) -> filter:
+    return filter(
+        lambda x: x is not None,
+        (
+            torch.nn.ConvTranspose2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                output_padding=output_padding,
+                dilation=dilation,
+                dtype=dtype,
+                device=device
+            ),
+            activation,
         )
     )
 
@@ -233,7 +228,7 @@ class BaselineModelArchitecture(torch.nn.Module):
 
 class VanillaBaselineModel(BaselineModelArchitecture):
     JOINT_CNN_CHANNELS: tuple[int, ...] = (2, 8, 16, 32)
-    DYNAMICS_FEATURES: tuple[int, ...] = (15, 256, 128)
+    DYNAMICS_FEATURES: tuple[int, ...] = (15, 256, 256, 128)
     FUSION_LAYER_FEATURES: tuple[int, ...] = (128, 64, 32, 6)
     def __init__(self, device: torch.device, dtype: torch.dtype):
         super().__init__(
@@ -249,72 +244,90 @@ class VanillaBaselineModel(BaselineModelArchitecture):
         )
 
 class VariationalAutoEncoder(torch.nn.Module):
-    def __init__(
-            self,
-            latent_space_dimensions: int,
-            device: torch.device,
-            dtype: torch.dtype):
+    JOINT_CNN_CHANNELS: tuple[int, ...] = (2, 32, 64, 128, 256, 512)
+    # NOTE: stride=2 so image dimensions go: 224 => 112 => 56 => 28 => 14 => 7
+    LAST_CNN_IMAGE_WIDTH: int = 7
+    LAST_CNN_IMAGE_HEIGHT: int = 7
+    JOINT_CNN_OUTPUT_FLATTENED_DIMENSIONS: int = JOINT_CNN_CHANNELS[-1] * LAST_CNN_IMAGE_WIDTH * LAST_CNN_IMAGE_HEIGHT
+    def __init__(self, latent_space_dimension: int, device: torch.device, dtype: torch.dtype):
         super().__init__()
-        self.channels = 2, 32, 64, 128, 256, 512
-        # NOTE: stride=2 so image dimensions go: 224 => 112 => 56 => 28 => 14 => 7
-        self.last_image_dimensions = 7
-        self.latent_space_dimensions = latent_space_dimensions
+        self.latent_space_dimension = latent_space_dimension
         self.device = device
         self.dtype = dtype
 
         self.encoder = torch.nn.Sequential(
             *chain_Conv2d_blocks(
-                channels=self.channels,
+                channels=self.JOINT_CNN_CHANNELS,
                 kernel_size=(3, 3), stride=2, padding=1, dilation=1,
                 activation=torch.nn.LeakyReLU(), max_pool2d_kernel_size=None,
                 dtype=dtype, device=device,
             ),
             torch.nn.Flatten(),
         )
-        output_dimensions = self.channels[-1] * self.last_image_dimensions ** 2
-        self.mean = torch.nn.Linear(output_dimensions, latent_space_dimensions, dtype=dtype, device=device)
+        self.fc_mu = torch.nn.Linear(
+            self.JOINT_CNN_OUTPUT_FLATTENED_DIMENSIONS, latent_space_dimension, dtype=dtype, device=device
+        )
         # NOTE: log(variance) for numerical stability.
-        self.log_variance = torch.nn.Linear(output_dimensions, latent_space_dimensions, dtype=dtype, device=device)
-        self.latent_space_decoder = torch.nn.Linear(latent_space_dimensions, output_dimensions, dtype=dtype, device=device)
+        self.fc_logvar = torch.nn.Linear(
+            self.JOINT_CNN_OUTPUT_FLATTENED_DIMENSIONS, latent_space_dimension, dtype=dtype, device=device
+        )
         self.decoder = torch.nn.Sequential(
+            torch.nn.Linear(
+                latent_space_dimension, self.JOINT_CNN_OUTPUT_FLATTENED_DIMENSIONS, dtype=dtype, device=device
+            ),
+            torch.nn.Unflatten(
+                1,
+                (self.JOINT_CNN_CHANNELS[-1], self.LAST_CNN_IMAGE_WIDTH, self.LAST_CNN_IMAGE_HEIGHT)
+            ),
             *chain_ConvTranspose2d_blocks(
-                channels=self.channels[::-1],
+                channels=self.JOINT_CNN_CHANNELS[::-1],
                 kernel_size=(3, 3), stride=2, padding=1, output_padding=1,
                 dilation=1, activation=torch.nn.LeakyReLU(),
                 dtype=dtype, device=device,
             )
         )
 
+    def encode(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Passes images through the encoder and returns their mean and log(variance) tensors.
+        
+        Parameters
+        ----------
+        images: torch.Tensor
+            Shape [batch_size, 2, 224, 224]
+            
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            (1) Latent space vectors' means, with shape             [batch_size, latent_space_dimension]
+            (2) Log of latent space vectors' variances, with shape  [batch_size, latent_space_dimension]"""
+        encoded = self.encoder(images)
+        return self.fc_mu(encoded), self.fc_logvar(encoded)
+
     def reparametrise(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         """Reparametrisation trick."""
         # NOTE: exp(0.5 * log(var)) == exp(log( sqrt(var) ))
         standard_deviation: torch.Tensor = torch.exp(0.5 * logvar)
-        # NOTE: `torch.randn_like(x)` takes `dtype` and `device`` into account.
+        # NOTE: `torch.randn_like(x)` takes `dtype` and `device` into account.
         epsilon: torch.Tensor = torch.randn_like(standard_deviation)
         return mu + standard_deviation * epsilon
     
-    def reshape_latent_space_vector(self, z: torch.Tensor) -> torch.Tensor:
-        """Reshapes a latent space vector for use by the latent space decoder.
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        """Decodes a latent space vector.
         
         Parameters
         ----------
         z: torch.Tensor
-            Shape [batch_size, self.channels[-1] * self.last_image_dimensions ** 2]
-
+            Shape [batch_size, latent_space_dimension]
+        
         Returns
         -------
         torch.Tensor
-            Shape [batch_size, self.channels[-1], self.last_image_dimensions, self.last_image_dimensions]"""
-        return z.view(
-            z.size(0),
-            self.channels[-1],
-            self.last_image_dimensions,
-            self.last_image_dimensions
-        )
+            Shape [batch_size, 2, 224, 224]"""
+        return self.decoder(z)
     
     def forward(self, X: tuple[torch.Tensor, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Accepts the concatenated front camera and mounted camera observations and the robot
-        arm's dynamics. Returns the beta-VAE loss and latent space parameters.
+        """Accepts the concatenated front camera and mounted camera observations and the robot arm's
+        dynamics. Returns the reconstruction and latent space vectors' parameters.
         
         Parameters
         ----------
@@ -330,15 +343,10 @@ class VariationalAutoEncoder(torch.nn.Module):
         Returns
         -------
         tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-            (0) VAE's reconstruction, with shape            [batch_size, 2, 224, 224]
-            (1) Latent space's mean, with shape             [batch_size, latent_space_dimensions]
-            (2) Log of latent space's variance, with shape  [batch_size, latent_space_dimensions]"""
+            (0) VAE's reconstruction, with shape                    [batch_size, 2, 224, 224]
+            (1) Latent space vectors' means, with shape             [batch_size, latent_space_dimension]
+            (2) Log of latent space vectors' variances, with shape  [batch_size, latent_space_dimension]"""
         images, _ = X
-        encoded = self.encoder(images)
-        mu = self.mean(encoded)
-        logvar = self.log_variance(encoded)
+        mu, logvar = self.encode(images)
         z = self.reparametrise(mu, logvar)
-        z = self.latent_space_decoder(z)
-        z = self.reshape_latent_space_vector(z)
-        reconstruction = self.decoder(z)
-        return reconstruction, mu, logvar
+        return self.decode(z), mu, logvar
