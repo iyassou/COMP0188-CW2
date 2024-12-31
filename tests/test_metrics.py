@@ -88,3 +88,34 @@ def test_mean_absolute_error(average, a, b, expected):
     mae.update(a, b)
     actual = mae.compute()
     assert torch.isclose(expected, actual).all()
+
+@pytest.mark.parametrize(
+    "kernel_size, x, y, expected",
+    [
+        (
+            7,
+            x := torch.randn((1, 2, 10, 10), dtype=DTYPE, device=DEVICE),
+            x,
+            torch.ones(2, dtype=DTYPE, device=DEVICE),
+        ),
+        (
+            7,
+            x := torch.randn((1, 1, 10, 10), dtype=DTYPE, device=DEVICE),
+            x,
+            torch.ones(1, dtype=DTYPE, device=DEVICE),
+        ),
+        (
+            3,
+            x := torch.zeros((1, 2, 10, 10), dtype=DTYPE, device=DEVICE),
+            torch.ones_like(x),
+            torch.zeros(2, dtype=DTYPE, device=DEVICE),
+        ),
+    ]
+)
+def test_structural_similarity(kernel_size, x, y, expected):
+    ss = M.StructuralSimilarity(
+        kernel_size=kernel_size, channels=x.size(1), value_range=1., device=DEVICE
+    )
+    ss.update(x, y)
+    actual = ss.compute()
+    assert torch.isclose(expected, actual, atol=1e-4).all()

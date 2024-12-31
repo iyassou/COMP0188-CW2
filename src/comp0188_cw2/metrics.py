@@ -1,3 +1,4 @@
+import piqa
 import torch
 import torcheval.metrics
 
@@ -14,7 +15,7 @@ class CosineSimilarity(torcheval.metrics.Metric[torch.Tensor]):
         super().__init__(device=device)
         self.eps = eps
         self._add_state("sum_cosine_similarity", torch.tensor(0.0, device=device))
-        self._add_state("count", torch.tensor(0.0, device=device))
+        self._add_state("count", torch.tensor(0, device=device))
 
     def update(self, input: torch.Tensor, target: torch.Tensor) -> "CosineSimilarity":
         input = input.to(self.device)
@@ -68,5 +69,29 @@ class MeanAbsoluteError(torcheval.metrics.Metric[torch.Tensor]):
     def merge_state(self, metrics: Iterable["MeanAbsoluteError"]):
         for metric in metrics:
             self.sum_mae += metric.sum_mae.to(self.device)
+            self.count += metric.count.to(self.device)
+        return self
+
+class StructuralSimilarity(torcheval.metrics.Metric[torch.Tensor]):
+    def __init__(self, kernel_size: int, channels: int, value_range: float=1., device: Optional[torch.device]=None) -> None:
+        super().__init__()
+        self.kernel = piqa.ssim.gaussian_kernel(kernel_size).repeat(channels, 1, 1)
+        self.value_range = value_range
+        self._add_state("ssim_sum", torch.zeros(channels, device=device))
+        self._add_state("count", torch.zeros(channels, dtype=int, device=device))
+
+    def update(self, input: torch.Tensor, target: torch.Tensor) -> "StructuralSimilarity":
+        input = input.to(self.device)
+        target = target.to(self.device)
+        ssim, _ = piqa.ssim.ssim(input, target, self.kernel, channel_avg=False, value_range=self.value_range)
+        self.ssim_sum += ssim.sum(0)
+        self.count += ssim.size(0)
+
+    def compute(self) -> torch.Tensor:
+        return self.ssim_sum / self.count
+    
+    def merge_state(self, metrics: Iterable["StructuralSimilarity"]):
+        for metric in metrics:
+            self.ssim_sum += metric.ssim_sum.to(self.device)
             self.count += metric.count.to(self.device)
         return self
