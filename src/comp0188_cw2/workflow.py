@@ -134,7 +134,6 @@ def train_for_one_epoch(
     learning_paradigm: LearningParadigm,
     dataloader: torch.utils.data.DataLoader,
     optimiser: torch.optim.Optimizer,
-    schedulers: Iterable[Stepper],
     criterion: torch.nn.modules.loss._Loss,
     wandb_metrics: Mapping[tuple[callable, callable], tuple[WandBMetric, ...]]) -> float:
     """Trains the model for a single epoch on the supplied DataLoader and
@@ -155,8 +154,6 @@ def train_for_one_epoch(
         for (select_p, select_c), wbms in wandb_metrics.items():
             for wbm in wbms:
                 wbm.update(select_p(prediction), select_c(comparand))
-    for scheduler in schedulers:
-        scheduler.step()
     return np.mean(losses)
 
 def evaluate(
@@ -233,7 +230,6 @@ def training_loop(
                 learning_paradigm=learning_paradigm,
                 dataloader=training_dataloader,
                 optimiser=optimiser,
-                schedulers=schedulers,
                 criterion=training_criterion,
                 wandb_metrics=training_metrics
             )
@@ -245,6 +241,13 @@ def training_loop(
                 criterion=validation_criterion,
                 wandb_metrics=validation_metrics
             )
+            # Advance schedulers.
+            for scheduler in schedulers:
+                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    kwargs = {"metrics": validation_loss}
+                else:
+                    kwargs = {}
+                scheduler.step(**kwargs)
             # Print performance.
             print(
                 f"Epoch: {epoch} / {epochs} | Training Loss: {training_loss:.4f}"
