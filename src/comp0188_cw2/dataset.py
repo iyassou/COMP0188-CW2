@@ -4,16 +4,26 @@ from .datatypes import (
     Observation,
 )
 
+import enum
 import torch
 
 from collections.abc import Mapping
 from pathlib import Path
 from torchvision.transforms import v2
 
+class Camera(enum.Flag):
+    FRONT = enum.auto()
+    MOUNT = enum.auto()
+
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, directory: Path, transforms: Mapping[str, v2.Transform], device: torch.device, dtype: torch.dtype):
-        self.device = device
-        self.dtype = dtype
+    def __init__(
+        self,
+        directory: Path,
+        transforms: Mapping[str, v2.Transform],
+        camera: Camera,
+        dtype: torch.dtype,
+        device: torch.device):
+
         self.observations = []
         h5_files = sorted(
             directory.glob("*.h5"),
@@ -25,6 +35,10 @@ class CustomDataset(torch.utils.data.Dataset):
                     setattr(obs, key, transform(getattr(obs, key)))
                 self.observations.append(obs)
 
+        self.camera = camera
+        self.dtype = dtype
+        self.device = device
+
     def __len__(self) -> int:
         return len(self.observations)
     
@@ -34,7 +48,12 @@ class CustomDataset(torch.utils.data.Dataset):
         obs: Observation = self.observations[j]
 
         # Observations
-        images = torch.concat((obs.front_cam_ob, obs.mount_cam_ob), dim=0)
+        images: list[torch.Tensor] = []
+        if self.camera & Camera.FRONT:
+            images.append(obs.front_cam_ob)
+        if self.camera & Camera.MOUNT:
+            images.append(obs.mount_cam_ob)
+        images: torch.Tensor = torch.concat(images, dim=0)
         images = images.type(self.dtype)
         dynamics = torch.concat(
             (
