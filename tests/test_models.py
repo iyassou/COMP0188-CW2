@@ -5,12 +5,12 @@ import torch
 DEVICE = torch.device("cpu")
 DTYPE = torch.float32
 SAMPLE_INPUT = (
-    torch.zeros((1, 2, 224, 224), device=DEVICE, dtype=DTYPE),
-    torch.zeros((1, 15), device=DEVICE, dtype=DTYPE)
+    torch.zeros((1, 2, 224, 224), dtype=DTYPE, device=DEVICE),
+    torch.zeros((1, 15), dtype=DTYPE, device=DEVICE)
 )
 
 def test_vanilla_baseline_model_initialisation():
-    model = M.VanillaBaselineModel(device=DEVICE, dtype=DTYPE)
+    model = M.VanillaBaselineModel(dtype=DTYPE, device=DEVICE)
     expected = """
 VanillaBaselineModel(
   (joint_cnn_encoder): Sequential(
@@ -48,12 +48,8 @@ VanillaBaselineModel(
     assert num_parameters == 6_574_958
 
 def test_variational_auto_encoder_initialisation():
-    latent_space = 1
-    model = M.VariationalAutoEncoder(
-        latent_space_dimension=latent_space,
-        device=DEVICE,
-        dtype=DTYPE,
-    )
+    config = M.VariationalAutoEncoderConfiguration(latent_space_dimension=1)
+    model = M.VariationalAutoEncoder(config=config, dtype=DTYPE, device=DEVICE)
     expected = f"""
 VariationalAutoEncoder(
   (encoder): Sequential(
@@ -69,10 +65,10 @@ VariationalAutoEncoder(
     (9): LeakyReLU(negative_slope=0.01)
     (10): Flatten(start_dim=1, end_dim=-1)
   )
-  (fc_mu): Linear(in_features=25088, out_features={latent_space}, bias=True)
-  (fc_logvar): Linear(in_features=25088, out_features={latent_space}, bias=True)
+  (fc_mu): Linear(in_features=25088, out_features={config.latent_space_dimension}, bias=True)
+  (fc_logvar): Linear(in_features=25088, out_features={config.latent_space_dimension}, bias=True)
   (decoder): Sequential(
-    (0): Linear(in_features={latent_space}, out_features=25088, bias=True)
+    (0): Linear(in_features={config.latent_space_dimension}, out_features=25088, bias=True)
     (1): Unflatten(dim=1, unflattened_size=(512, 7, 7))
     (2): ConvTranspose2d(512, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), output_padding=(1, 1))
     (3): LeakyReLU(negative_slope=0.01)
