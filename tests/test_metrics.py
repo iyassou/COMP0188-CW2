@@ -94,13 +94,13 @@ def test_mean_absolute_error(average, a, b, expected):
     [
         (
             7,
-            x := torch.randn((1, 2, 10, 10), dtype=DTYPE, device=DEVICE),
+            x := torch.rand((1, 2, 10, 10), dtype=DTYPE, device=DEVICE),
             x,
             torch.ones(2, dtype=DTYPE, device=DEVICE),
         ),
         (
             7,
-            x := torch.randn((1, 1, 10, 10), dtype=DTYPE, device=DEVICE),
+            x := torch.rand((1, 1, 10, 10), dtype=DTYPE, device=DEVICE),
             x,
             torch.ones(1, dtype=DTYPE, device=DEVICE),
         ),

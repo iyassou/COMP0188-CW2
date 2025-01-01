@@ -74,8 +74,9 @@ class MeanAbsoluteError(torcheval.metrics.Metric[torch.Tensor]):
 
 class StructuralSimilarity(torcheval.metrics.Metric[torch.Tensor]):
     def __init__(self, kernel_size: int, channels: int, value_range: float=1., device: Optional[torch.device]=None) -> None:
-        super().__init__()
+        super().__init__(device=device)
         self.kernel = piqa.ssim.gaussian_kernel(kernel_size).repeat(channels, 1, 1)
+        self.kernel = self.kernel.to(device)
         self.value_range = value_range
         self._add_state("ssim_sum", torch.zeros(channels, device=device))
         self._add_state("count", torch.zeros(channels, dtype=int, device=device))
