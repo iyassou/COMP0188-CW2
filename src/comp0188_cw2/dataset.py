@@ -15,6 +15,16 @@ class Camera(enum.Flag):
     FRONT = enum.auto()
     MOUNT = enum.auto()
 
+    @property
+    def single(self) -> bool:
+        return bool(self ^ (Camera.FRONT | Camera.MOUNT))
+
+    @property
+    def name(self) -> str:
+        if not self.single:
+            return "both"
+        return super().name.lower()
+
 class CustomDataset(torch.utils.data.Dataset):
     def __init__(
         self,
