@@ -1,8 +1,9 @@
 import torch
-import typing
 
-BetaVAEReconstructionLoss = typing.Literal["mse", "bce"]
-BetaVAEReduction = typing.Literal["mean", "sum"]
+from typing import get_args, Literal, Optional
+
+BetaVAEReconstructionLoss = Literal["mse", "bce"]
+BetaVAEReduction = Literal["mean", "sum"]
 
 def kl_divergence_special_case(mu: torch.Tensor, logvar: torch.Tensor, reduction: BetaVAEReduction) -> torch.Tensor:
     """Returns the closed form KL divergence between an arbitrary Gaussian and a normal Gaussian.
@@ -27,10 +28,10 @@ def kl_divergence_special_case(mu: torch.Tensor, logvar: torch.Tensor, reduction
 class BalancedMSECrossEntropyLoss(torch.nn.modules.loss._Loss):
     """Balanced loss, equally weighting the MSE loss of the position-velocity
     component and the cross-entropy loss of the gripper component."""
-    def __init__(self):
+    def __init__(self, class_weights: Optional[torch.Tensor]=None):
         super().__init__()
         self.pos_vel_loss = torch.nn.MSELoss(reduction="mean")
-        self.gripper_loss = torch.nn.CrossEntropyLoss(reduction="mean")
+        self.gripper_loss = torch.nn.CrossEntropyLoss(weight=class_weights, reduction="mean")
     
     def forward(
             self, prediction: torch.Tensor, actual: torch.Tensor,
@@ -56,20 +57,23 @@ class BalancedMSECrossEntropyLoss(torch.nn.modules.loss._Loss):
 class BetaVAELoss(torch.nn.modules.loss._Loss):
     """Parametrised loss function for beta variational autoencoders.
     Returns the sum of the reconstruction loss and the beta-weighted KL divergence."""
-    def __init__(self, reconstruction_loss: BetaVAEReconstructionLoss, reduction: BetaVAEReduction):
+    def __init__(self,
+        reconstruction_loss: BetaVAEReconstructionLoss,
+        reduction: BetaVAEReduction,
+        beta: Optional[float]=None):
         super().__init__()
-        if reconstruction_loss not in typing.get_args(BetaVAEReconstructionLoss):
+        if reconstruction_loss not in get_args(BetaVAEReconstructionLoss):
             raise ValueError(
                 f"unrecognised `reconstruction_loss` {repr(reconstruction_loss)}, "
-                f"must be one of: {', '.join(map(repr, typing.get_args(BetaVAEReconstructionLoss)))}"
+                f"must be one of: {', '.join(map(repr, get_args(BetaVAEReconstructionLoss)))}"
             )
-        if reduction not in typing.get_args(BetaVAEReduction):
+        if reduction not in get_args(BetaVAEReduction):
             raise ValueError(
                 f"unrecognised `reduction` {repr(reconstruction_loss)}, "
-                f"must be one of: {', '.join(map(repr, typing.get_args(BetaVAEReduction)))}"
+                f"must be one of: {', '.join(map(repr, get_args(BetaVAEReduction)))}"
             )
         
-        self.beta = torch.tensor(0.0, requires_grad=False)
+        self.beta = torch.tensor(beta or 0.0, requires_grad=False)
         self.reduction = reduction
         if reconstruction_loss == "mse":
             self.reconstruction_loss = torch.nn.MSELoss(reduction=reduction)
