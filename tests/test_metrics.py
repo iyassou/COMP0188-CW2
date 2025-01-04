@@ -9,26 +9,25 @@ DTYPE = torch.float32
 EPS = torch.finfo(DTYPE).eps
 N = 10
 
-@pytest.fixture
-def cosine_similarity():
-    return M.CosineSimilarity(eps=EPS, device=DEVICE)
+def random_integer(low=10, high=100) -> torch.Tensor:
+    return torch.randint(low=low, high=high, size=(1,), dtype=DTYPE, device=DEVICE)
 
 @pytest.mark.parametrize(
     "a, b, expected",
     [
         (
-            torch.ones((1, N), dtype=DTYPE, device=DEVICE),
-            torch.ones((1, N), dtype=DTYPE, device=DEVICE),
+            torch.ones(1, N, dtype=DTYPE, device=DEVICE),
+            torch.ones(1, N, dtype=DTYPE, device=DEVICE),
             1,
         ),
         (
-            torch.ones((3, N), dtype=DTYPE, device=DEVICE),
-            torch.ones((3, N), dtype=DTYPE, device=DEVICE),
+            torch.ones(3, N, dtype=DTYPE, device=DEVICE),
+            torch.ones(3, N, dtype=DTYPE, device=DEVICE),
             1,
         ),
         (
             a := torch.nn.functional.normalize(
-                torch.ones((1, N), dtype=DTYPE, device=DEVICE),
+                torch.ones(1, N, dtype=DTYPE, device=DEVICE),
                 eps=0
             ),
             -a,
@@ -39,7 +38,7 @@ def cosine_similarity():
             torch.tensor(
                 [x for _ in range(N // 2) for x in (1, 0)],
                 dtype=DTYPE, device=DEVICE,
-            ).reshape((1, N)),
+            ).reshape(1, N),
             math.cos(math.radians(45)),
         ),
         (
@@ -47,46 +46,44 @@ def cosine_similarity():
             torch.tensor(
                 [x for _ in range(N // 2) for x in (1, -1)],
                 dtype=DTYPE, device=DEVICE,
-            ).reshape((1, N)),
+            ).reshape(1, N),
             0,
         ),
     ]
 )
-def test_cosine_similarity(a, b, expected, cosine_similarity):
-    cosine_similarity.update(a, b)
-    actual = cosine_similarity.compute().type(DTYPE)
+def test_cosine_similarity(a, b, expected):
+    cossim = M.CosineSimilarity(eps=EPS, device=DEVICE)
+    cossim.update(a, b)
+    actual = cossim.compute().type(DTYPE)
     assert pytest.approx(expected) == actual.item()
 
 @pytest.mark.parametrize(
-    "average, a, b, expected",
+    "average, channels, a, b, expected",
     [
-        (
-            None,
-            a := torch.ones((1, N), dtype=DTYPE, device=DEVICE),
-            a,
-            torch.zeros_like(a),
-        ),
-        (
-            "macro",
-            a,
-            a,
-            torch.tensor(0.0, dtype=DTYPE, device=DEVICE),
-        ),
-        (
-            None,
-            a,
-            a + (
-                salt := torch.randint(
-                    low=10, high=100, size=(1,), dtype=DTYPE, device=DEVICE)
-            ),
-            torch.tile(salt, (1, N)),
-        )
+        (None, N, a := torch.ones(N), a, torch.zeros_like(a)),
+        ("macro", None, a, a, torch.zeros(1)),
+        ("macro", None, a, (x := random_integer()) * a, x - 1),
+        (None, N, a, a + x, x)
     ]
 )
-def test_mean_absolute_error(average, a, b, expected):
-    mae = M.MeanAbsoluteError(average=average, device=DEVICE)
+def test_mean_absolute_error(average, channels, a, b, expected):
+    mae = M.MeanAbsoluteError(average=average, channels=channels, device=DEVICE)
     mae.update(a, b)
     actual = mae.compute()
+    assert torch.isclose(expected, actual).all()
+
+@pytest.mark.parametrize(
+    "x, expected",
+    [
+        (torch.ones(N), torch.ones(1)),
+        (torch.zeros(N), torch.zeros(1)),
+        ((rand := random_integer()) * torch.ones(N), rand),
+    ]
+)
+def test_meanf32(x, expected):
+    mf32 = M.MeanFloat32(device=DEVICE)
+    mf32.update(x)
+    actual = mf32.compute()
     assert torch.isclose(expected, actual).all()
 
 @pytest.mark.parametrize(
@@ -94,19 +91,19 @@ def test_mean_absolute_error(average, a, b, expected):
     [
         (
             7,
-            x := torch.rand((1, 2, 10, 10), dtype=DTYPE, device=DEVICE),
+            x := torch.rand(1, 2, 10, 10, dtype=DTYPE, device=DEVICE),
             x,
             torch.ones(2, dtype=DTYPE, device=DEVICE),
         ),
         (
             7,
-            x := torch.rand((1, 1, 10, 10), dtype=DTYPE, device=DEVICE),
+            x := torch.rand(1, 1, 10, 10, dtype=DTYPE, device=DEVICE),
             x,
             torch.ones(1, dtype=DTYPE, device=DEVICE),
         ),
         (
             3,
-            x := torch.zeros((1, 2, 10, 10), dtype=DTYPE, device=DEVICE),
+            x := torch.zeros(1, 2, 10, 10, dtype=DTYPE, device=DEVICE),
             torch.ones_like(x),
             torch.zeros(2, dtype=DTYPE, device=DEVICE),
         ),
