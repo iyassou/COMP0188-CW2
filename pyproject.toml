@@ -9,15 +9,18 @@ dependencies = [
     "h5py",
     "matplotlib",
     "numpy",
+    "pandas",
     "piqa",
+    "seaborn",
     "setuptools",
     "torch",
     "torcheval",
     "torchvision",
+    "umap-learn",
     "tqdm",
     "wandb",
 ]
-requires-python = ">= 3.9" # PEP 585
+requires-python = ">= 3.10" # 3.9 for PEP 585 and 3.10 itertools.pairwise haha
 authors = [
   {name = "Iyassou Shimels", email = "s.iyassou@gmail.com"},
 ]
@@ -32,7 +35,6 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
 ]
 
 [project.optional-dependencies]

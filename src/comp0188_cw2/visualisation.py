@@ -1,10 +1,18 @@
-from .datatypes import (
-    Observation,
+from comp0188_cw2.datatypes import (
     Chunk,
+    GripperAction,
+    Observation,
 )
+from comp0188_cw2.models import VariationalAutoEncoder
 
+import matplotlib
 import matplotlib.animation
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import torch
+import umap
+import warnings
 
 from pathlib import Path
 from typing import Optional
@@ -63,6 +71,34 @@ def display_chunk(
         fig, update, frames=frames or len(chunk), interval=75, blit=False, # text gets funky when blitting
     )
     ani.save(gif)
+
+def latent_space_umap(
+        vae: VariationalAutoEncoder,
+        dataloader: torch.utils.data.DataLoader,
+        ax: matplotlib.axes.Axes,
+        umap_kwargs: Optional[dict]=None):
+    """Visualises the VAE's latent space on a given dataloader using UMAP."""
+    vae.eval()
+    latents = []
+    gripper_actions = []
+    with torch.no_grad():
+        for (images, _), actions in dataloader:
+            mu, _ = vae.encode(images)
+            latents.append(mu.cpu())
+            gripper_actions.extend(
+                map(
+                    lambda x: GripperAction(x.item()).name,
+                    torch.argmax(actions[:, 3:], dim=1)
+                )
+            )
+    latents = torch.cat(latents, dim=0).numpy()
+    reducer = umap.UMAP(**(umap_kwargs or {}))
+    with warnings.catch_warnings(action="ignore"):
+        embedding = reducer.fit_transform(latents)
+    df = pd.DataFrame({'x': embedding[:, 0], 'y': embedding[:, 1], 'Gripper Action': gripper_actions})
+    ax.grid(True)
+    ax.set_aspect("equal")
+    sns.scatterplot(data=df, x='x', y='y', hue='Gripper Action', ax=ax)
 
 if __name__ == '__main__':
     from .datatypes import Chunk
