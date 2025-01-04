@@ -12,7 +12,7 @@ def sample_chunk(tmp_path_factory):
     RNG = np.random.default_rng(seed=0xCAFE)
     data = {
         "actions": [
-            np.concat((
+            np.concatenate((
                 RNG.uniform(0, 1, size=(3,)).astype(np.float16),
                 RNG.integers(
                     low=0, high=len(D.GripperAction), size=(1,)

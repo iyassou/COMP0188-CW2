@@ -4,40 +4,38 @@ import math
 import pytest
 import torch
 
-def test_cosine_annealer_bad_inputs():
-    # start greater than end
-    with pytest.raises(ValueError):
-        U.CosineAnnealer(
-            param=torch.tensor(0.0), start=1, end=-1, steps=1
-        )
-    # bad_steps
-    bad_steps = 0, -1
-    for steps in bad_steps:
-        with pytest.raises(ValueError):
-            U.CosineAnnealer(
-                param=torch.tensor(0.0), start=0, end=1, steps=steps,
-            )
+@pytest.mark.parametrize(
+    "start, end, steps, exception",
+    [
+        (1, -1, 1, ValueError), # start greater than end
+        (0, 1, 0, ValueError),  # bad steps
+        (0, 1, -1, ValueError), # bad steps
+    ]
+)
+def test_cosine_annealer_bad_inputs(start, end, steps, exception):
+    with pytest.raises(exception):
+        U.CosineAnnealer(param=torch.tensor(0.0), start=start, end=end, steps=steps)
 
-def test_cosine_annealer_initialisation():
-    x = torch.tensor(0.0)
-    start = 55
-    assert x.item() != start
-    _ = U.CosineAnnealer(x, start=start, end=start + 1, steps=1)
-    assert x.item() == start
-
-def test_cosine_annealer_stepping():
-    x = torch.tensor(0.0)
-    start = 5
-    end = 10
-    steps = 20
+@pytest.mark.parametrize(
+    "start, end, steps",
+    [
+        (0, 10, 1),
+        (5, 10, 20),
+        (0, 1, 100),
+        (0, 2, 100),
+        (0, 100, 100),
+    ]
+)
+def test_cosine_annealer(start, end, steps):
     def cosine_func(step: int, total_steps: int):
         step %= total_steps
         return (math.cos(math.pi * (step / total_steps - 1.)) + 1.) / 2.
-    expected = [
-        start + cosine_func(step, steps) * (end - start)
-        for step in range(2 * steps)
-    ]
-    annealer = U.CosineAnnealer(x, start=start, end=end, steps=steps)
-    for expect in expected:
-        assert x.item() == pytest.approx(expect)
+    
+    x = torch.tensor(0.0)
+    annealer = U.CosineAnnealer(param=x, start=start, end=end, steps=steps)
+    assert pytest.approx(start) == x.item()
+
+    for step in range(10 * steps):
+        expected = start + cosine_func(step, steps) * (end - start)
+        assert pytest.approx(expected, abs=1e-5) == x.item()
         annealer.step()

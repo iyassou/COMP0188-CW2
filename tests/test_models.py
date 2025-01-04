@@ -1,15 +1,19 @@
 import comp0188_cw2.models as M
 
+import pytest
 import torch
 
 DEVICE = torch.device("cpu")
 DTYPE = torch.float32
-SAMPLE_INPUT = (
-    torch.zeros((1, 2, 224, 224), dtype=DTYPE, device=DEVICE),
-    torch.zeros((1, 15), dtype=DTYPE, device=DEVICE)
-)
 
-def test_vanilla_baseline_model_initialisation():
+@pytest.fixture(scope="session")
+def sample_input() -> tuple[torch.Tensor, torch.Tensor]:
+    return (
+		torch.zeros((1, 2, 224, 224), dtype=DTYPE, device=DEVICE),
+		torch.zeros((1, 15), dtype=DTYPE, device=DEVICE)
+	)
+
+def test_vanilla_baseline_model_initialisation(sample_input):
     model = M.VanillaBaselineModel(dtype=DTYPE, device=DEVICE)
     expected = """
 VanillaBaselineModel(
@@ -40,7 +44,7 @@ VanillaBaselineModel(
 )
     """.strip()
     assert repr(model) == expected
-    _ = model(SAMPLE_INPUT) # NOTE: initialising lazy modules
+    _ = model(sample_input) # NOTE: initialising lazy modules
     # NOTE: Number of parameters is a relatively good indicator of whether
     #       I've ported the baseline model correctly.
     #       Expected number of parameters retrieved from Josh's implementation.
