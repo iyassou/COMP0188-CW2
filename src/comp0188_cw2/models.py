@@ -280,6 +280,7 @@ class VariationalAutoEncoderConfiguration:
         d = dataclasses.asdict(self)
         extra_attrs = "cnn_output_shape", "cnn_output_flattened_dimension"
         d.update({attr: getattr(self, attr) for attr in extra_attrs})
+        d["cnn_activation"] = repr(self.cnn_activation) # serialisability
         return d
 
 class VariationalAutoEncoder(torch.nn.Module):
