@@ -11,38 +11,28 @@ N = 100
 def sample_chunk(tmp_path_factory):
     RNG = np.random.default_rng(seed=0xCAFE)
     data = {
-        "actions": [
-            np.concatenate((
-                RNG.uniform(0, 1, size=(3,)).astype(np.float16),
-                RNG.integers(
-                    low=0, high=len(D.GripperAction), size=(1,)
-                ).astype(np.float16)
-            )) for _ in range(N)
-        ],
-        "ee_cartesian_pos_ob": [
-            RNG.standard_normal(size=(7,)).astype(np.float16)
-            for _ in range(N)
-        ],
-        "ee_cartesian_vel_ob": [
-            RNG.standard_normal(size=(6,)).astype(np.float16)
-            for _ in range(N)
-        ],
-        "front_cam_ob": [
-            RNG.uniform(
-                low=0, high=255 + np.finfo(np.float16).tiny,
-                size=(224, 224)
-            ).astype(np.float16) for _ in range(N)
-        ],
-        "joint_pos_ob": [
-            RNG.normal(loc=0.8, scale=0.11, size=(2,)).astype(np.float16)
-            for _ in range(N)
-        ],
-        "mount_cam_ob": [
-            RNG.uniform(
-                low=0, high=255 + np.finfo(np.float16).tiny,
-                size=(224, 224)
-            ).astype(np.float16) for _ in range(N)
-        ],
+        "actions": np.hstack((
+            RNG.uniform(0, 1, size=(N, 3)).astype(np.float16),
+            RNG.integers(
+                low=0, high=len(D.GripperAction), size=(N, 1)
+            ).astype(np.float16)
+        )),
+        
+        "ee_cartesian_pos_ob": RNG.standard_normal(size=(N, 7)).astype(np.float16),
+
+        "ee_cartesian_vel_ob": RNG.standard_normal(size=(N, 6)).astype(np.float16),
+        
+        "front_cam_ob": RNG.uniform(
+            low=0, high=255 + np.finfo(np.float16).tiny, size=(N, 224, 224)
+        ).astype(np.float16),
+        
+        "joint_pos_ob": RNG.normal(loc=0.8, scale=0.11, size=(N, 2)).astype(np.float16),
+
+        "mount_cam_ob": RNG.uniform(
+            low=0, high=255 + np.finfo(np.float16).tiny, size=(N, 224, 224)
+        ).astype(np.float16),
+
+        "terminals": RNG.integers(low=0, high=2, size=N),
     }
     expected_keys = set(typing.get_args(D._ObservationBaseAttribute))
     missing = expected_keys ^ data.keys()
@@ -54,16 +44,14 @@ def sample_chunk(tmp_path_factory):
     return D.Chunk(filepath)
 
 def test_chunk_basic(sample_chunk):
-    c = sample_chunk
-    assert c.n is None
-    assert len(c) == N
-    assert c.n == N
+    assert sample_chunk.n is None
+    assert len(sample_chunk) == N
+    assert sample_chunk.n == N
 
 def test_chunk_getitem(sample_chunk):
-    c = sample_chunk
     bad_index = slice(2, 1)
     with pytest.raises(IndexError):
-        c[bad_index]
+        sample_chunk[bad_index]
     RNG = np.random.default_rng(seed=0xBEEF)
     M = 100
     starts = RNG.integers(0, N // 2, size=(M,))
@@ -75,4 +63,4 @@ def test_chunk_getitem(sample_chunk):
     ]
     good_indices = (*list(range(N)), *slices)
     for index in good_indices:
-        c[index]
+        sample_chunk[index]

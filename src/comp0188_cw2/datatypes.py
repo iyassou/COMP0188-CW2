@@ -24,10 +24,9 @@ class GripperAction(enum.Enum):
     CLOSE    = 2
 
 # No "prompts" or "rewards" in the preprocessed versions we're working with.
-# "terminals" isn't being used right now.
 _ObservationBaseAttribute = typing.Literal[
     "actions", "ee_cartesian_pos_ob", "ee_cartesian_vel_ob", "front_cam_ob",
-    "joint_pos_ob", "mount_cam_ob"
+    "joint_pos_ob", "mount_cam_ob", "terminals"
 ]
 _ObservationBaseTypes = V4, V7, V6, Grayscale, V2, Grayscale, np.bool_
 _ObservationBase = dataclasses.make_dataclass(
